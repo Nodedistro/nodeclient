@@ -135,7 +135,7 @@ pub fn safe_id(value: &str) -> Result<()> {
         || value.ends_with(' ')
         || !value
             .bytes()
-            .all(|c| c.is_ascii_alphanumeric() || b"._-+ ".contains(&c))
+            .all(|c| c.is_ascii_alphanumeric() || b"._-+@ ".contains(&c))
     {
         bail!("Unsafe identifier.");
     }
@@ -223,6 +223,7 @@ mod tests {
             "assets/virtual/pre-1.6/newsound/mob/ghast/affectionate scream.ogg"
         )
         .is_ok());
+        assert!(safe_join(Path::new("root"), "java/jre-legacy/lib/deploy/splash@2x.gif").is_ok());
     }
     #[test]
     fn redact() {
