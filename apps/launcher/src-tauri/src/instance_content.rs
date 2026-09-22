@@ -17,6 +17,17 @@ pub struct FileEntry {
     pub modified: Option<u64>,
 }
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModEntry {
+    pub name: String,
+    pub path: String,
+    pub size: u64,
+    pub modified: Option<u64>,
+    pub enabled: bool,
+    pub sha1: Option<String>,
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ServerEntry {
@@ -52,8 +63,117 @@ fn instance_subdir(root: &Path, id: &str, folder: &str) -> Result<PathBuf> {
     Ok(dir)
 }
 
-pub fn list_mods(root: &Path, id: &str) -> Result<Vec<FileEntry>> {
-    list_files(&instance_subdir(root, id, "mods")?, &["jar", "zip"])
+pub fn list_mods(root: &Path, id: &str) -> Result<Vec<ModEntry>> {
+    let dir = instance_subdir(root, id, "mods")?;
+    let mut files = vec![];
+    if !dir.is_dir() {
+        return Ok(files);
+    }
+    for item in fs::read_dir(&dir)? {
+        let item = item?;
+        if !item.file_type()?.is_file() {
+            continue;
+        }
+        let name = item.file_name().to_string_lossy().into_owned();
+        let (enabled, base_name) = if let Some(base) = name.strip_suffix(".disabled") {
+            let lower_base = base.to_ascii_lowercase();
+            if lower_base.ends_with(".jar") || lower_base.ends_with(".zip") {
+                (false, base.to_owned())
+            } else {
+                continue;
+            }
+        } else {
+            let lower = name.to_ascii_lowercase();
+            if lower.ends_with(".jar") || lower.ends_with(".zip") {
+                (true, name.clone())
+            } else {
+                continue;
+            }
+        };
+        safe_id(&name)?;
+        safe_id(&base_name)?;
+        let path = item.path();
+        let meta = item.metadata()?;
+        let sha1 = if enabled {
+            file_sha1(&path).ok()
+        } else {
+            None
+        };
+        files.push(ModEntry {
+            name: base_name,
+            path: path.to_string_lossy().into_owned(),
+            size: meta.len(),
+            modified: modified_secs(&meta),
+            enabled,
+            sha1,
+        });
+    }
+    files.sort_by(|a, b| a.name.to_ascii_lowercase().cmp(&b.name.to_ascii_lowercase()));
+    Ok(files)
+}
+
+fn file_sha1(path: &Path) -> Result<String> {
+    use sha1::{Digest, Sha1};
+    let mut file = fs::File::open(path)?;
+    let mut hasher = Sha1::new();
+    let mut buffer = [0u8; 65536];
+    loop {
+        let n = file.read(&mut buffer)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buffer[..n]);
+    }
+    Ok(hex::encode(hasher.finalize()))
+}
+
+fn mod_path(dir: &Path, name: &str, enabled: bool) -> Result<PathBuf> {
+    safe_id(name)?;
+    let lower = name.to_ascii_lowercase();
+    if !(lower.ends_with(".jar") || lower.ends_with(".zip")) {
+        bail!("Only .jar or .zip mod files are supported.");
+    }
+    let filename = if enabled {
+        name.to_owned()
+    } else {
+        format!("{name}.disabled")
+    };
+    safe_id(&filename)?;
+    safe_join(dir, &filename)
+}
+
+pub fn set_mod_enabled(root: &Path, id: &str, name: &str, enabled: bool) -> Result<ModEntry> {
+    let dir = instance_subdir(root, id, "mods")?;
+    let from = mod_path(&dir, name, !enabled)?;
+    let to = mod_path(&dir, name, enabled)?;
+    if !from.is_file() {
+        // Already in desired state?
+        if to.is_file() {
+            let meta = fs::metadata(&to)?;
+            return Ok(ModEntry {
+                name: name.to_owned(),
+                path: to.to_string_lossy().into_owned(),
+                size: meta.len(),
+                modified: modified_secs(&meta),
+                enabled,
+                sha1: if enabled { file_sha1(&to).ok() } else { None },
+            });
+        }
+        bail!("Mod file not found.");
+    }
+    if to.exists() && to != from {
+        bail!("Cannot change mod state: target file already exists.");
+    }
+    fs::rename(&from, &to)?;
+    let meta = fs::metadata(&to)?;
+    Ok(ModEntry {
+        name: name.to_owned(),
+        path: to.to_string_lossy().into_owned(),
+        size: meta.len(),
+        modified: modified_secs(&meta),
+        enabled,
+        sha1: if enabled { file_sha1(&to).ok() } else { None },
+    })
 }
 
 pub fn list_screenshots(root: &Path, id: &str) -> Result<Vec<FileEntry>> {
@@ -94,7 +214,7 @@ fn list_files(dir: &Path, extensions: &[&str]) -> Result<Vec<FileEntry>> {
     Ok(files)
 }
 
-pub fn add_mod(root: &Path, id: &str, source: &Path) -> Result<FileEntry> {
+pub fn add_mod(root: &Path, id: &str, source: &Path) -> Result<ModEntry> {
     let name = source
         .file_name()
         .and_then(|n| n.to_str())
@@ -116,22 +236,30 @@ pub fn add_mod(root: &Path, id: &str, source: &Path) -> Result<FileEntry> {
     }
     fs::copy(source, &dest)?;
     let meta = fs::metadata(&dest)?;
-    Ok(FileEntry {
+    Ok(ModEntry {
         name,
         path: dest.to_string_lossy().into_owned(),
         size: meta.len(),
         modified: modified_secs(&meta),
+        enabled: true,
+        sha1: file_sha1(&dest).ok(),
     })
 }
 
 pub fn remove_mod(root: &Path, id: &str, name: &str) -> Result<()> {
     safe_id(name)?;
-    let path = safe_join(&instance_subdir(root, id, "mods")?, name)?;
-    if !path.is_file() {
-        bail!("Mod file not found.");
+    let dir = instance_subdir(root, id, "mods")?;
+    let enabled = mod_path(&dir, name, true)?;
+    let disabled = mod_path(&dir, name, false)?;
+    if enabled.is_file() {
+        fs::remove_file(enabled)?;
+        return Ok(());
     }
-    fs::remove_file(path)?;
-    Ok(())
+    if disabled.is_file() {
+        fs::remove_file(disabled)?;
+        return Ok(());
+    }
+    bail!("Mod file not found.");
 }
 
 pub fn delete_screenshot(root: &Path, id: &str, name: &str) -> Result<()> {
@@ -158,11 +286,109 @@ pub fn read_screenshot(root: &Path, id: &str, name: &str) -> Result<Vec<u8>> {
 }
 
 pub fn open_subdir(root: &Path, id: &str, folder: &str) -> Result<()> {
-    if !["mods", "screenshots"].contains(&folder) {
+    if !["mods", "screenshots", "saves", "backups"].contains(&folder) {
         bail!("Unsupported instance folder.");
     }
     let path = instance_subdir(root, id, folder)?;
     open::that(path)?;
+    Ok(())
+}
+
+/// Official launcher game directory (`%APPDATA%/.minecraft` on Windows).
+pub fn vanilla_minecraft_dir() -> Result<PathBuf> {
+    #[cfg(windows)]
+    {
+        let appdata = std::env::var_os("APPDATA").context("APPDATA is not set.")?;
+        Ok(PathBuf::from(appdata).join(".minecraft"))
+    }
+    #[cfg(not(windows))]
+    {
+        let home = std::env::var_os("HOME").context("HOME is not set.")?;
+        Ok(PathBuf::from(home).join(".minecraft"))
+    }
+}
+
+pub fn list_vanilla_worlds() -> Result<Vec<FileEntry>> {
+    let saves = vanilla_minecraft_dir()?.join("saves");
+    if !saves.is_dir() {
+        return Ok(vec![]);
+    }
+    let mut worlds = vec![];
+    for item in fs::read_dir(&saves)? {
+        let item = item?;
+        if !item.file_type()?.is_dir() {
+            continue;
+        }
+        let name = item.file_name().to_string_lossy().into_owned();
+        if safe_id(&name).is_err() {
+            continue;
+        }
+        let meta = item.metadata()?;
+        worlds.push(FileEntry {
+            name,
+            path: item.path().to_string_lossy().into_owned(),
+            size: meta.len(),
+            modified: modified_secs(&meta),
+        });
+    }
+    worlds.sort_by(|a, b| a.name.to_ascii_lowercase().cmp(&b.name.to_ascii_lowercase()));
+    Ok(worlds)
+}
+
+/// Copy selected (or all) worlds from the official `.minecraft/saves` into an instance.
+/// Never deletes or modifies the originals.
+pub fn import_vanilla_worlds(root: &Path, id: &str, names: Option<Vec<String>>) -> Result<u32> {
+    let source_root = vanilla_minecraft_dir()?.join("saves");
+    if !source_root.is_dir() {
+        bail!("No official Minecraft saves folder was found at AppData/.minecraft/saves.");
+    }
+    let dest_root = instance_subdir(root, id, "saves")?;
+    let wanted: Option<std::collections::HashSet<String>> =
+        names.map(|list| list.into_iter().collect());
+    let mut imported = 0u32;
+    for item in fs::read_dir(&source_root)? {
+        let item = item?;
+        if !item.file_type()?.is_dir() {
+            continue;
+        }
+        let name = item.file_name().to_string_lossy().into_owned();
+        if safe_id(&name).is_err() {
+            continue;
+        }
+        if wanted.as_ref().is_some_and(|set| !set.contains(&name)) {
+            continue;
+        }
+        let dest = safe_join(&dest_root, &name)?;
+        if dest.exists() {
+            continue;
+        }
+        copy_dir_recursive(&item.path(), &dest)?;
+        imported += 1;
+    }
+    Ok(imported)
+}
+
+fn copy_dir_recursive(from: &Path, to: &Path) -> Result<()> {
+    fs::create_dir_all(to)?;
+    for item in fs::read_dir(from)? {
+        let item = item?;
+        let name = item
+            .file_name()
+            .to_str()
+            .context("Invalid world file name.")?
+            .to_owned();
+        safe_id(&name)?;
+        let dest = safe_join(to, &name)?;
+        let ty = item.file_type()?;
+        if ty.is_symlink() {
+            bail!("Symlinks inside world folders are not allowed.");
+        }
+        if ty.is_dir() {
+            copy_dir_recursive(&item.path(), &dest)?;
+        } else if ty.is_file() {
+            fs::copy(item.path(), &dest)?;
+        }
+    }
     Ok(())
 }
 

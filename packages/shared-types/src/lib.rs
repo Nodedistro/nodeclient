@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::{Component, Path, PathBuf};
 
@@ -20,6 +20,8 @@ pub struct Instance {
 #[serde(deny_unknown_fields)]
 pub struct Loader {
     pub r#type: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
 }
 #[derive(Clone, Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
@@ -40,8 +42,19 @@ impl Instance {
         if self.name.trim().is_empty() || self.name.len() > 100 {
             bail!("Instance name must contain 1–100 characters.");
         }
-        if self.loader.r#type != "vanilla" {
-            bail!("Only Vanilla is supported in this milestone.");
+        match self.loader.r#type.as_str() {
+            "vanilla" => {}
+            "fabric" | "quilt" | "forge" | "neoforge" => {
+                let version = self
+                    .loader
+                    .version
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|v| !v.is_empty())
+                    .context("Choose a loader version.")?;
+                safe_id(version)?;
+            }
+            _ => bail!("Unsupported loader type."),
         }
         if !["automatic", "custom"].contains(&self.java.mode.as_str()) {
             bail!("Invalid Java mode.");

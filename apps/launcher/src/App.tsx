@@ -2,13 +2,12 @@ import { useCallback, useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
   ArrowDownToLine,
-  Box,
+  BookOpen,
   ChevronDown,
+  Compass,
+  Download,
   Home,
-  Image,
-  Layers,
   LoaderCircle,
-  Package,
   Plus,
   Server,
   Settings2,
@@ -19,16 +18,15 @@ import {
 import { Button } from "@/components/ui/button";
 import { AccountAvatar } from "@/components/AccountAvatar";
 import { AccountPanel } from "@/components/AccountPanel";
-import { HomePage } from "@/components/HomePage";
+import { BrowsePage, type BrowseTab } from "@/components/BrowsePage";
+import { DownloadsPage } from "@/components/DownloadsPage";
+import { HomePage, useModCount } from "@/components/HomePage";
 import { InstanceEditor } from "@/components/InstanceEditor";
-import { InstancesPage } from "@/components/InstancesPage";
+import { LibraryPage, type LibraryTab } from "@/components/LibraryPage";
 import { LogsPage } from "@/components/LogsPage";
-import { ModsPage } from "@/components/ModsPage";
-import { ScreenshotsPage } from "@/components/ScreenshotsPage";
 import { ServersPage } from "@/components/ServersPage";
 import { SettingsPanel } from "@/components/SettingsPanel";
 import { SetupWizard } from "@/components/SetupWizard";
-import { VersionsPage } from "@/components/VersionsPage";
 import type { UpdateInfo } from "@/components/UpdatePanel";
 import { command, desktop, message } from "@/lib/api";
 import type {
@@ -63,17 +61,24 @@ const initial: Snapshot = {
 
 const navigation = [
   { name: "Home", icon: Home },
-  { name: "Instances", icon: Box },
-  { name: "Versions", icon: Layers },
-  { name: "Mods", icon: Package },
+  { name: "Library", icon: BookOpen },
+  { name: "Browse", icon: Compass },
   { name: "Servers", icon: Server },
-  { name: "Screenshots", icon: Image },
+  { name: "Downloads", icon: Download },
 ] as const;
+
+type PageName =
+  | (typeof navigation)[number]["name"]
+  | "Accounts"
+  | "Settings"
+  | "Logs";
 
 export default function App() {
   const [data, setData] = useState<Snapshot>(initial);
   const [manifest, setManifest] = useState<Manifest | null>(null);
-  const [page, setPage] = useState("Home");
+  const [page, setPage] = useState<PageName>("Home");
+  const [libraryTab, setLibraryTab] = useState<LibraryTab>("Instances");
+  const [browseTab, setBrowseTab] = useState<BrowseTab>("Versions");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(desktop);
   const [progress, setProgress] = useState<Progress | null>(null);
@@ -168,6 +173,7 @@ export default function App() {
   );
   const active = busy || data.status.phase !== "IDLE";
   const installed = !!selected && data.installed.includes(selected.id);
+  const modCount = useModCount(selected?.id, desktop);
 
   const saveSettings = async (settings: Settings) => {
     await command("save_settings", { settings });
@@ -211,24 +217,73 @@ export default function App() {
     }
   };
 
-  async function play() {
+  async function play(opts?: { safeMode?: boolean }) {
     if (!selected) {
       openEditor();
       return;
     }
-    if (installed && !account) {
+    const installOnly = !installed && !opts?.safeMode;
+    if (!installOnly && !account) {
       setPage("Accounts");
       return;
     }
     setBusy(true);
     setError("");
     try {
-      await command("launch", { id: selected.id, installOnly: !installed });
+      await command("launch", {
+        id: selected.id,
+        installOnly,
+        safeMode: opts?.safeMode ?? false,
+      });
       await refresh();
     } catch (e) {
       setError(message(e));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function repair(id?: string) {
+    const target = id ?? selected?.id;
+    if (!target) return;
+    setBusy(true);
+    setError("");
+    try {
+      await command("repair_instance", { id: target });
+      await refresh();
+    } catch (e) {
+      setError(message(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function explainCrash() {
+    if (!selected) {
+      setError("Select an instance first.");
+      return;
+    }
+    try {
+      const explained = await command<{
+        title: string;
+        summary: string;
+        details: string[];
+        actions: string[];
+        reportName: string | null;
+      }>("explain_crash", { id: selected.id });
+      const body = [
+        explained.title,
+        explained.summary,
+        "",
+        ...explained.details.map((d) => `• ${d}`),
+        explained.reportName ? `\nSource: ${explained.reportName}` : "",
+      ].join("\n");
+      setError(body);
+      setLogKind("Crash Reports");
+      setPage("Logs");
+      await fetchLogs();
+    } catch (e) {
+      setError(message(e));
     }
   }
 
@@ -260,6 +315,15 @@ export default function App() {
         : !account
           ? "SIGN IN"
           : "PLAY";
+
+  const topTitle =
+    page === "Home"
+      ? "Play"
+      : page === "Library"
+        ? `Library · ${libraryTab}`
+        : page === "Browse"
+          ? `Browse · ${browseTab}`
+          : page;
 
   const notice = error && (
     <div className="error-banner" role="alert">
@@ -313,7 +377,7 @@ export default function App() {
             Node<em>Client</em>
           </span>
         </button>
-        <div className="nav-label">Library</div>
+        <div className="nav-label">Play</div>
         <nav>
           {navigation.map(({ name, icon: Icon }) => (
             <button
@@ -331,8 +395,8 @@ export default function App() {
         </nav>
         <div className="sidebar-bottom">
           {[
-            { name: "Logs", icon: Terminal },
-            { name: "Settings", icon: Settings2 },
+            { name: "Logs" as const, icon: Terminal },
+            { name: "Settings" as const, icon: Settings2 },
           ].map(({ name, icon: Icon }) => (
             <button
               key={name}
@@ -363,9 +427,9 @@ export default function App() {
       </aside>
       <div className="workspace">
         <header className="topbar">
-          <div className="topbar-title">{page === "Home" ? "Play" : page}</div>
+          <div className="topbar-title">{topTitle}</div>
           <div className="topbar-right">
-            {page === "Instances" && (
+            {page === "Library" && libraryTab === "Instances" && (
               <Button disabled={active} onClick={() => openEditor()}>
                 <Plus size={16} />
                 Create instance
@@ -415,13 +479,18 @@ export default function App() {
               desktop={desktop}
               progress={progress}
               playLabel={playLabel}
+              modCount={modCount}
               onChooseInstance={chooseInstance}
               onPlay={() => void play()}
+              onSafePlay={() => void play({ safeMode: true })}
+              onEdit={() => openEditor(selected)}
               onOpenLogs={(kind) => {
                 setLogKind(kind);
                 setPage("Logs");
               }}
               onAction={action}
+              onRefresh={refresh}
+              onRepair={() => void repair()}
             />
           )}
           {page === "Accounts" && (
@@ -434,42 +503,42 @@ export default function App() {
               onError={setError}
             />
           )}
-          {page === "Instances" && (
-            <InstancesPage
+          {page === "Library" && (
+            <LibraryPage
+              tab={libraryTab}
+              onTab={setLibraryTab}
               instances={data.instances}
               selectedId={selected?.id}
               installed={data.installed}
               active={active}
               desktop={desktop}
-              onSelect={(id) => {
-                chooseInstance(id);
-                setPage("Home");
-              }}
+              onSelectInstance={chooseInstance}
               onEdit={openEditor}
               onCreate={() => openEditor()}
               onRefresh={refresh}
               onAction={action}
+              onPlayInstance={(id) => {
+                chooseInstance(id);
+                setPage("Home");
+              }}
+              onRepair={(id) => void repair(id)}
             />
           )}
-          {page === "Versions" && (
-            <VersionsPage
+          {page === "Browse" && (
+            <BrowsePage
+              tab={browseTab}
+              onTab={setBrowseTab}
               manifest={manifest}
               search={search}
-              selectedVersion={selected?.minecraftVersion}
+              selected={selected}
               active={active}
-              onSearch={setSearch}
-              onRefresh={() => void loadVersions()}
-              onSelectVersion={selectVersion}
-              onAction={action}
-            />
-          )}
-          {page === "Mods" && (
-            <ModsPage
-              instances={data.instances}
-              selectedId={selected?.id}
               desktop={desktop}
-              onAction={action}
+              instances={data.instances}
+              onSearch={setSearch}
+              onRefreshVersions={() => void loadVersions()}
+              onSelectVersion={selectVersion}
               onSelectInstance={chooseInstance}
+              onAction={action}
             />
           )}
           {page === "Servers" && (
@@ -481,13 +550,11 @@ export default function App() {
               onSelectInstance={chooseInstance}
             />
           )}
-          {page === "Screenshots" && (
-            <ScreenshotsPage
-              instances={data.instances}
-              selectedId={selected?.id}
-              desktop={desktop}
-              onAction={action}
-              onSelectInstance={chooseInstance}
+          {page === "Downloads" && (
+            <DownloadsPage
+              status={data.status}
+              progress={progress}
+              active={active}
             />
           )}
           {page === "Settings" && (
@@ -512,16 +579,21 @@ export default function App() {
               onSearch={setSearch}
               onRefresh={() => void fetchLogs()}
               onAction={action}
+              onExplainCrash={() => void explainCrash()}
             />
           )}
         </main>
         <footer className="statusbar">
-          <span>
+          <button
+            type="button"
+            className="status-link"
+            onClick={() => setPage("Downloads")}
+          >
             <ArrowDownToLine size={13} />
             {progress
               ? `${progress.completed} / ${progress.total} files`
               : "Downloads idle"}
-          </span>
+          </button>
           <span>
             <span
               className={
@@ -538,7 +610,7 @@ export default function App() {
             {update?.available
               ? `UPDATE ${update.latestVersion}`
               : "NODECLIENT"}{" "}
-            <strong>0.1.1</strong>
+            <strong>0.1.5</strong>
           </span>
         </footer>
       </div>

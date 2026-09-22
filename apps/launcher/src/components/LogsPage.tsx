@@ -1,4 +1,4 @@
-import { Copy, FolderOpen } from "lucide-react";
+import { Copy, FolderOpen, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -22,6 +22,7 @@ export function LogsPage({
   onSearch,
   onRefresh,
   onAction,
+  onExplainCrash,
 }: {
   logKind: string;
   logText: string;
@@ -33,6 +34,7 @@ export function LogsPage({
   onSearch: (value: string) => void;
   onRefresh: () => void;
   onAction: (task: () => Promise<unknown>) => Promise<void>;
+  onExplainCrash: () => void;
 }) {
   return (
     <div className="stack">
@@ -47,6 +49,14 @@ export function LogsPage({
           </TabsList>
         </Tabs>
         <div className="row">
+          <Button
+            variant="secondary"
+            disabled={!selectedId}
+            onClick={onExplainCrash}
+          >
+            <Sparkles size={15} />
+            Explain crash
+          </Button>
           <Button variant="outline" onClick={onRefresh}>
             Refresh
           </Button>

@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod instance_content;
+mod modrinth;
+mod troubleshoot;
 mod updater;
 use anyhow::{bail, Context, Result};
 use nodeclient_auth::{
@@ -111,7 +113,15 @@ fn snapshot(state: tauri::State<AppState>) -> CommandResult<Snapshot> {
                     .ok()
                     .and_then(|p| std::fs::read(p.join("installed.json")).ok())
                     .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
-                    .is_some_and(|marker| marker["version"] == i.minecraft_version)
+                    .is_some_and(|marker| {
+                        marker["version"] == i.minecraft_version
+                            && marker["loader"].as_str().unwrap_or("vanilla") == i.loader.r#type
+                            && marker
+                                .get("loaderVersion")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                == i.loader.version.as_deref().unwrap_or("")
+                    })
             })
             .map(|i| i.id.clone())
             .collect();
@@ -202,7 +212,7 @@ fn open_instance(state: tauri::State<AppState>, id: String) -> CommandResult<()>
 fn list_mods(
     state: tauri::State<AppState>,
     id: String,
-) -> CommandResult<Vec<instance_content::FileEntry>> {
+) -> CommandResult<Vec<instance_content::ModEntry>> {
     let root = state.store.lock().unwrap().root.clone();
     instance_content::list_mods(&root, &id).map_err(error)
 }
@@ -210,7 +220,7 @@ fn list_mods(
 async fn add_mod(
     state: tauri::State<'_, AppState>,
     id: String,
-) -> CommandResult<Option<instance_content::FileEntry>> {
+) -> CommandResult<Option<instance_content::ModEntry>> {
     let file = rfd::AsyncFileDialog::new()
         .set_title("Add mod (.jar or .zip)")
         .add_filter("Mods", &["jar", "zip"])
@@ -228,6 +238,204 @@ async fn add_mod(
 fn remove_mod(state: tauri::State<AppState>, id: String, name: String) -> CommandResult<()> {
     let root = state.store.lock().unwrap().root.clone();
     instance_content::remove_mod(&root, &id, &name).map_err(error)
+}
+#[tauri::command]
+fn set_mod_enabled(
+    state: tauri::State<AppState>,
+    id: String,
+    name: String,
+    enabled: bool,
+) -> CommandResult<instance_content::ModEntry> {
+    let root = state.store.lock().unwrap().root.clone();
+    instance_content::set_mod_enabled(&root, &id, &name, enabled).map_err(error)
+}
+#[tauri::command]
+async fn modrinth_search(
+    query: String,
+    game_version: String,
+    loader: String,
+    limit: Option<u32>,
+    offset: Option<u32>,
+) -> CommandResult<modrinth::SearchResult> {
+    modrinth::search(
+        &query,
+        &game_version,
+        &loader,
+        limit.unwrap_or(20),
+        offset.unwrap_or(0),
+    )
+    .await
+    .map_err(error)
+}
+#[tauri::command]
+async fn install_modrinth_mod(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    id: String,
+    project_id: String,
+) -> CommandResult<instance_content::ModEntry> {
+    if !state
+        .busy
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_ok()
+    {
+        return Err("Another task is already running.".into());
+    }
+    state.cancel.store(false, Ordering::Relaxed);
+    let result = (async {
+        let (root, instance, concurrency) = {
+            let store = state.store.lock().unwrap();
+            (
+                store.root.clone(),
+                store.get(&id)?,
+                store.settings()?.concurrency,
+            )
+        };
+        let loader = instance.loader.r#type.clone();
+        status(
+            &app,
+            "DOWNLOADING",
+            "Finding a compatible Modrinth version",
+            None,
+        );
+        let file = modrinth::latest_compatible_version(
+            &project_id,
+            &instance.minecraft_version,
+            &loader,
+        )
+        .await?;
+        let mods_dir = nodeclient_types::safe_join(
+            &root,
+            &format!("instances/{id}/mods"),
+        )?;
+        std::fs::create_dir_all(&mods_dir)?;
+        status(
+            &app,
+            "DOWNLOADING",
+            &format!("Downloading {}", file.filename),
+            None,
+        );
+        let path = modrinth::install_file(
+            &mods_dir,
+            &file,
+            concurrency,
+            state.cancel.clone(),
+            reporter(&app),
+        )
+        .await?;
+        let meta = std::fs::metadata(&path)?;
+        status(&app, "IDLE", "Mod installed.", None);
+        Ok(instance_content::ModEntry {
+            name: file.filename,
+            path: path.to_string_lossy().into_owned(),
+            size: meta.len(),
+            modified: meta
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs()),
+            enabled: true,
+            sha1: Some(file.sha1),
+        })
+    })
+    .await;
+    state.busy.store(false, Ordering::SeqCst);
+    if let Err(e) = &result {
+        let message = error(anyhow::anyhow!("{e:#}"));
+        log(&app, message.clone());
+        status(&app, "IDLE", &message, None);
+    }
+    result.map_err(error)
+}
+#[tauri::command]
+async fn update_modrinth_mod(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    id: String,
+    name: String,
+) -> CommandResult<instance_content::ModEntry> {
+    if !state
+        .busy
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_ok()
+    {
+        return Err("Another task is already running.".into());
+    }
+    state.cancel.store(false, Ordering::Relaxed);
+    let result = (async {
+        let (root, instance, concurrency) = {
+            let store = state.store.lock().unwrap();
+            (
+                store.root.clone(),
+                store.get(&id)?,
+                store.settings()?.concurrency,
+            )
+        };
+        let mods = instance_content::list_mods(&root, &id)?;
+        let current = mods
+            .into_iter()
+            .find(|m| m.name == name)
+            .context("Mod not found.")?;
+        if !current.enabled {
+            bail!("Enable the mod before updating it.");
+        }
+        let sha1 = current
+            .sha1
+            .clone()
+            .context("Could not hash the installed mod.")?;
+        status(&app, "DOWNLOADING", "Checking Modrinth for updates", None);
+        let Some(file) = modrinth::latest_from_hash(
+            &sha1,
+            &instance.minecraft_version,
+            &instance.loader.r#type,
+        )
+        .await?
+        else {
+            bail!("No newer compatible Modrinth version found.");
+        };
+        if file.sha1.eq_ignore_ascii_case(&sha1) {
+            bail!("This mod is already up to date.");
+        }
+        let mods_dir = nodeclient_types::safe_join(&root, &format!("instances/{id}/mods"))?;
+        // Remove old file then install new (may rename).
+        instance_content::remove_mod(&root, &id, &name)?;
+        status(
+            &app,
+            "DOWNLOADING",
+            &format!("Updating to {}", file.version_number),
+            None,
+        );
+        let path = modrinth::install_file(
+            &mods_dir,
+            &file,
+            concurrency,
+            state.cancel.clone(),
+            reporter(&app),
+        )
+        .await?;
+        let meta = std::fs::metadata(&path)?;
+        status(&app, "IDLE", "Mod updated.", None);
+        Ok(instance_content::ModEntry {
+            name: file.filename,
+            path: path.to_string_lossy().into_owned(),
+            size: meta.len(),
+            modified: meta
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs()),
+            enabled: true,
+            sha1: Some(file.sha1),
+        })
+    })
+    .await;
+    state.busy.store(false, Ordering::SeqCst);
+    if let Err(e) = &result {
+        let message = error(anyhow::anyhow!("{e:#}"));
+        log(&app, message.clone());
+        status(&app, "IDLE", &message, None);
+    }
+    result.map_err(error)
 }
 #[tauri::command]
 fn list_screenshots(
@@ -265,6 +473,19 @@ fn open_instance_folder(
     instance_content::open_subdir(&root, &id, &folder).map_err(error)
 }
 #[tauri::command]
+fn list_vanilla_worlds() -> CommandResult<Vec<instance_content::FileEntry>> {
+    instance_content::list_vanilla_worlds().map_err(error)
+}
+#[tauri::command]
+fn import_vanilla_worlds(
+    state: tauri::State<AppState>,
+    id: String,
+    names: Option<Vec<String>>,
+) -> CommandResult<u32> {
+    let root = state.store.lock().unwrap().root.clone();
+    instance_content::import_vanilla_worlds(&root, &id, names).map_err(error)
+}
+#[tauri::command]
 fn list_servers(
     state: tauri::State<AppState>,
     id: String,
@@ -285,6 +506,57 @@ fn save_servers(
 async fn versions(state: tauri::State<'_, AppState>) -> CommandResult<nodeclient_core::Manifest> {
     let root = state.store.lock().unwrap().root.clone();
     nodeclient_core::manifest_cached(Some(&root)).await.map_err(error)
+}
+#[tauri::command]
+async fn fabric_loaders(
+    game_version: String,
+) -> CommandResult<Vec<nodeclient_core::fabric::FabricLoaderVersion>> {
+    nodeclient_core::fabric::list_loaders(&game_version)
+        .await
+        .map_err(error)
+}
+#[tauri::command]
+async fn loader_versions(
+    loader: String,
+    game_version: String,
+) -> CommandResult<Vec<nodeclient_core::fabric::FabricLoaderVersion>> {
+    nodeclient_core::loader::list_versions(&loader, &game_version)
+        .await
+        .map_err(error)
+}
+async fn ensure_java(
+    app: &tauri::AppHandle,
+    root: &std::path::Path,
+    instance: &nodeclient_types::Instance,
+    settings: &nodeclient_types::Settings,
+    version: &serde_json::Value,
+    cancel: Arc<AtomicBool>,
+) -> Result<nodeclient_java::Runtime> {
+    let major = nodeclient_core::metadata::java_major(version);
+    match nodeclient_java::select(root, &instance.java, major).await {
+        Ok(runtime) => Ok(runtime),
+        Err(e) if instance.java.mode == "custom" => Err(e),
+        Err(_) => {
+            status(
+                app,
+                "DOWNLOADING",
+                &format!("Installing official Java {major}"),
+                None,
+            );
+            let component = version["javaVersion"]["component"]
+                .as_str()
+                .unwrap_or("jre-legacy");
+            nodeclient_java::managed::install(
+                root,
+                component,
+                major,
+                settings.concurrency,
+                cancel,
+                reporter(app),
+            )
+            .await
+        }
+    }
 }
 #[tauri::command]
 async fn java_runtimes(
@@ -447,7 +719,12 @@ fn cancel_update(state: tauri::State<AppState>) {
     state.update_cancel.store(true, Ordering::Relaxed);
 }
 #[tauri::command]
-async fn launch(app: tauri::AppHandle, id: String, install_only: bool) -> CommandResult<()> {
+async fn launch(
+    app: tauri::AppHandle,
+    id: String,
+    install_only: bool,
+    safe_mode: Option<bool>,
+) -> CommandResult<()> {
     let state = app.state::<AppState>();
     if state
         .busy
@@ -457,7 +734,7 @@ async fn launch(app: tauri::AppHandle, id: String, install_only: bool) -> Comman
         return Err("Minecraft or an installation is already running.".into());
     }
     state.cancel.store(false, Ordering::Relaxed);
-    let result = launch_inner(&app, &id, install_only).await;
+    let result = launch_inner(&app, &id, install_only, safe_mode.unwrap_or(false)).await;
     state.busy.store(false, Ordering::SeqCst);
     if let Err(e) = &result {
         let message = error(anyhow::anyhow!("{e:#}"));
@@ -466,7 +743,41 @@ async fn launch(app: tauri::AppHandle, id: String, install_only: bool) -> Comman
     }
     result.map_err(error)
 }
-async fn launch_inner(app: &tauri::AppHandle, id: &str, install_only: bool) -> Result<()> {
+#[tauri::command]
+async fn repair_instance(app: tauri::AppHandle, id: String) -> CommandResult<()> {
+    let state = app.state::<AppState>();
+    if state
+        .busy
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return Err("Minecraft or an installation is already running.".into());
+    }
+    state.cancel.store(false, Ordering::Relaxed);
+    let result = (async {
+        let game = {
+            let store = state.store.lock().unwrap();
+            store.instance_dir(&id)?
+        };
+        troubleshoot::clear_install_marker(&game)?;
+        status(&app, "DOWNLOADING", "Repairing instance files", None);
+        launch_inner(&app, &id, true, false).await
+    })
+    .await;
+    state.busy.store(false, Ordering::SeqCst);
+    if let Err(e) = &result {
+        let message = error(anyhow::anyhow!("{e:#}"));
+        log(&app, message.clone());
+        status(&app, "IDLE", &message, None);
+    }
+    result.map_err(error)
+}
+async fn launch_inner(
+    app: &tauri::AppHandle,
+    id: &str,
+    install_only: bool,
+    safe_mode: bool,
+) -> Result<()> {
     let state = app.state::<AppState>();
     let (root, game, instance, settings) = {
         let store = state.store.lock().unwrap();
@@ -477,6 +788,43 @@ async fn launch_inner(app: &tauri::AppHandle, id: &str, install_only: bool) -> R
             store.settings()?,
         )
     };
+    let disabled_mods = if safe_mode && !install_only {
+        status(
+            app,
+            "DOWNLOADING",
+            "Safe mode: temporarily disabling mods",
+            None,
+        );
+        troubleshoot::disable_enabled_mods(&root, id)?
+    } else {
+        vec![]
+    };
+    let launch_result = launch_body(app, &root, &game, &instance, &settings, id, install_only).await;
+    if !disabled_mods.is_empty() {
+        let _ = troubleshoot::restore_mods(&root, id, &disabled_mods);
+        if launch_result.is_ok() {
+            log(
+                app,
+                format!(
+                    "Safe mode restored {} mod{}.",
+                    disabled_mods.len(),
+                    if disabled_mods.len() == 1 { "" } else { "s" }
+                ),
+            );
+        }
+    }
+    launch_result
+}
+async fn launch_body(
+    app: &tauri::AppHandle,
+    root: &std::path::Path,
+    game: &std::path::Path,
+    instance: &Instance,
+    settings: &Settings,
+    id: &str,
+    install_only: bool,
+) -> Result<()> {
+    let state = app.state::<AppState>();
     let session = if install_only {
         None
     } else {
@@ -497,43 +845,64 @@ async fn launch_inner(app: &tauri::AppHandle, id: &str, install_only: bool) -> R
             .await?,
         )
     };
+    let needs_installer = matches!(
+        instance.loader.r#type.as_str(),
+        "forge" | "neoforge"
+    );
     status(
         app,
         "DOWNLOADING",
-        "Resolving official Minecraft files",
+        match instance.loader.r#type.as_str() {
+            "fabric" => "Resolving Fabric + Minecraft files",
+            "quilt" => "Resolving Quilt + Minecraft files",
+            "forge" => "Preparing Forge installer",
+            "neoforge" => "Preparing NeoForge installer",
+            _ => "Resolving official Minecraft files",
+        },
         None,
     );
-    let version = nodeclient_core::version(
-        &root,
-        &instance.minecraft_version,
-        state.cancel.clone(),
-        reporter(app),
-    )
-    .await?;
-    let major = nodeclient_core::metadata::java_major(&version);
-    let runtime = match nodeclient_java::select(&root, &instance.java, major).await {
-        Ok(runtime) => runtime,
-        Err(e) if instance.java.mode == "custom" => return Err(e),
-        Err(_) => {
-            status(
-                app,
-                "DOWNLOADING",
-                &format!("Installing official Java {major}"),
-                None,
-            );
-            let component = version["javaVersion"]["component"]
-                .as_str()
-                .unwrap_or("jre-legacy");
-            nodeclient_java::managed::install(
-                &root,
-                component,
-                major,
-                settings.concurrency,
-                state.cancel.clone(),
-                reporter(app),
-            )
-            .await?
-        }
+    let (version, runtime) = if needs_installer {
+        let vanilla = nodeclient_core::version(
+            &root,
+            &instance.minecraft_version,
+            state.cancel.clone(),
+            reporter(app),
+        )
+        .await?;
+        let runtime =
+            ensure_java(app, &root, &instance, &settings, &vanilla, state.cancel.clone()).await?;
+        status(
+            app,
+            "DOWNLOADING",
+            match instance.loader.r#type.as_str() {
+                "neoforge" => "Running NeoForge installer",
+                _ => "Running Forge installer",
+            },
+            None,
+        );
+        let version = nodeclient_core::loader::resolve(
+            &root,
+            &instance.minecraft_version,
+            &instance.loader,
+            state.cancel.clone(),
+            reporter(app),
+            Some(std::path::Path::new(&runtime.path)),
+        )
+        .await?;
+        (version, runtime)
+    } else {
+        let version = nodeclient_core::loader::resolve(
+            &root,
+            &instance.minecraft_version,
+            &instance.loader,
+            state.cancel.clone(),
+            reporter(app),
+            None,
+        )
+        .await?;
+        let runtime =
+            ensure_java(app, &root, &instance, &settings, &version, state.cancel.clone()).await?;
+        (version, runtime)
     };
     let installation = nodeclient_core::install::install(
         &root,
@@ -546,7 +915,12 @@ async fn launch_inner(app: &tauri::AppHandle, id: &str, install_only: bool) -> R
     .await?;
     nodeclient_profiles::write_json(
         &nodeclient_types::safe_join(&game, "installed.json")?,
-        &serde_json::json!({"version":instance.minecraft_version,"java":runtime.major}),
+        &serde_json::json!({
+            "version": instance.minecraft_version,
+            "loader": instance.loader.r#type,
+            "loaderVersion": instance.loader.version,
+            "java": runtime.major
+        }),
     )?;
     if install_only {
         status(app, "IDLE", "Installation verified. Ready to play.", None);
@@ -655,6 +1029,48 @@ fn read_logs(
     })()
     .map_err(error)
 }
+#[tauri::command]
+fn explain_crash(
+    state: tauri::State<AppState>,
+    id: String,
+) -> CommandResult<troubleshoot::CrashExplanation> {
+    let root = state.store.lock().unwrap().root.clone();
+    troubleshoot::explain_crash(&root, &id).map_err(error)
+}
+#[tauri::command]
+fn list_backups(
+    state: tauri::State<AppState>,
+    id: String,
+) -> CommandResult<Vec<troubleshoot::BackupEntry>> {
+    let root = state.store.lock().unwrap().root.clone();
+    troubleshoot::list_backups(&root, &id).map_err(error)
+}
+#[tauri::command]
+fn create_backup(
+    state: tauri::State<AppState>,
+    id: String,
+) -> CommandResult<troubleshoot::BackupEntry> {
+    let root = state.store.lock().unwrap().root.clone();
+    troubleshoot::create_backup(&root, &id).map_err(error)
+}
+#[tauri::command]
+fn restore_backup(
+    state: tauri::State<AppState>,
+    id: String,
+    name: String,
+) -> CommandResult<()> {
+    let root = state.store.lock().unwrap().root.clone();
+    troubleshoot::restore_backup(&root, &id, &name).map_err(error)
+}
+#[tauri::command]
+fn delete_backup(
+    state: tauri::State<AppState>,
+    id: String,
+    name: String,
+) -> CommandResult<()> {
+    let root = state.store.lock().unwrap().root.clone();
+    troubleshoot::delete_backup(&root, &id, &name).map_err(error)
+}
 fn main() {
     #[cfg(debug_assertions)]
     {
@@ -707,13 +1123,21 @@ fn main() {
             list_mods,
             add_mod,
             remove_mod,
+            set_mod_enabled,
+            modrinth_search,
+            install_modrinth_mod,
+            update_modrinth_mod,
             list_screenshots,
             delete_screenshot,
             read_screenshot,
             open_instance_folder,
+            list_vanilla_worlds,
+            import_vanilla_worlds,
             list_servers,
             save_servers,
             versions,
+            fabric_loaders,
+            loader_versions,
             java_runtimes,
             browse_java,
             start_microsoft_login,
@@ -724,6 +1148,12 @@ fn main() {
             install_update,
             cancel_update,
             launch,
+            repair_instance,
+            explain_crash,
+            list_backups,
+            create_backup,
+            restore_backup,
+            delete_backup,
             read_logs
         ])
         .run(tauri::generate_context!())

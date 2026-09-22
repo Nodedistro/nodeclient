@@ -5,6 +5,7 @@ import {
   FolderOpen,
   MoreHorizontal,
   Trash2,
+  Wrench,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -21,7 +22,7 @@ import {
   AlertDialogAction,
 } from "@/components/ui/alert-dialog";
 import { command } from "@/lib/api";
-import type { Instance } from "@/lib/models";
+import { loaderLabel, type Instance } from "@/lib/models";
 
 export function InstancesPage({
   instances,
@@ -34,6 +35,7 @@ export function InstancesPage({
   onCreate,
   onRefresh,
   onAction,
+  onRepair,
 }: {
   instances: Instance[];
   selectedId?: string;
@@ -45,6 +47,7 @@ export function InstancesPage({
   onCreate: () => void;
   onRefresh: () => Promise<void>;
   onAction: (task: () => Promise<unknown>) => Promise<void>;
+  onRepair: (id: string) => void;
 }) {
   return (
     <div className="instance-grid">
@@ -73,7 +76,9 @@ export function InstancesPage({
               )}
             </div>
             <h2>{i.name}</h2>
-            <p>Minecraft {i.minecraftVersion} · Vanilla</p>
+            <p>
+              Minecraft {i.minecraftVersion} · {loaderLabel(i)}
+            </p>
             <div className="instance-meta">
               <span>{i.memory.maximumMb / 1024} GB RAM</span>
               <span>
@@ -114,12 +119,42 @@ export function InstancesPage({
               <Button
                 variant="ghost"
                 size="icon"
+                aria-label="Repair instance files"
+                disabled={active || !desktop}
+                onClick={() => onRepair(i.id)}
+              >
+                <Wrench size={16} />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
                 aria-label="Open instance folder"
                 onClick={() =>
                   void onAction(() => command("open_instance", { id: i.id }))
                 }
               >
                 <FolderOpen size={16} />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={active || !desktop}
+                onClick={() =>
+                  void onAction(async () => {
+                    const n = await command<number>("import_vanilla_worlds", {
+                      id: i.id,
+                      names: null,
+                    });
+                    if (n === 0) {
+                      throw new Error(
+                        "No new worlds imported from AppData/.minecraft/saves.",
+                      );
+                    }
+                    await onRefresh();
+                  })
+                }
+              >
+                Import worlds
               </Button>
               <AlertDialog>
                 <AlertDialogTrigger asChild>

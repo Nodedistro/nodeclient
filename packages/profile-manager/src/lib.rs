@@ -68,6 +68,7 @@ impl Store {
             "logs",
             "saves",
             "crash-reports",
+            "backups",
         ] {
             fs::create_dir_all(safe_join(&root, d)?)?;
         }

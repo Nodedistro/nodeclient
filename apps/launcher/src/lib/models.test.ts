@@ -22,6 +22,40 @@ describe("instance configuration", () => {
       }).success,
     ).toBe(false);
   });
+  it("accepts fabric loader versions", () => {
+    expect(
+      instanceSchema.safeParse({
+        ...sample,
+        loader: { type: "fabric", version: "0.19.5" },
+      }).success,
+    ).toBe(true);
+  });
+  it("accepts forge/quilt/neoforge with versions", () => {
+    for (const type of ["forge", "quilt", "neoforge"] as const) {
+      expect(
+        instanceSchema.safeParse({
+          ...sample,
+          loader: { type, version: "1.0.0" },
+        }).success,
+      ).toBe(true);
+    }
+  });
+  it("rejects unknown loaders", () => {
+    expect(
+      instanceSchema.safeParse({
+        ...sample,
+        loader: { type: "optifine" },
+      }).success,
+    ).toBe(false);
+  });
+  it("rejects forge without a version", () => {
+    expect(
+      instanceSchema.safeParse({
+        ...sample,
+        loader: { type: "forge" },
+      }).success,
+    ).toBe(false);
+  });
   it("leaves room for the operating system", () => {
     expect(defaultMemory(8192)).toBe(2048);
     expect(defaultMemory(32768)).toBe(4096);

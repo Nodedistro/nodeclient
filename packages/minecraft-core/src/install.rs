@@ -18,6 +18,24 @@ pub struct Installation {
     pub game_assets: PathBuf,
     pub logging: Option<(String, PathBuf)>,
 }
+pub fn maven_path(coordinate: &str) -> Result<String> {
+    let parts: Vec<&str> = coordinate.split(':').collect();
+    let (group, artifact, version, classifier) = match parts.as_slice() {
+        [g, a, v] => (*g, *a, *v, None),
+        [g, a, v, c] => (*g, *a, *v, Some(*c)),
+        _ => bail!("Invalid Maven library coordinate."),
+    };
+    if group.is_empty() || artifact.is_empty() || version.is_empty() {
+        bail!("Invalid Maven library coordinate.");
+    }
+    let group_path = group.replace('.', "/");
+    let file = match classifier {
+        Some(c) => format!("{artifact}-{version}-{c}.jar"),
+        None => format!("{artifact}-{version}.jar"),
+    };
+    Ok(format!("{group_path}/{artifact}/{version}/{file}"))
+}
+
 pub fn artifact(value: &Value, path: PathBuf) -> Result<Download> {
     Ok(Download {
         url: value["url"]
@@ -35,6 +53,35 @@ pub fn artifact(value: &Value, path: PathBuf) -> Result<Download> {
         size: value["size"].as_u64(),
     })
 }
+
+fn maven_download(lib: &Value, root: &Path) -> Result<(Download, PathBuf)> {
+    let name = lib["name"]
+        .as_str()
+        .context("Maven library name missing")?;
+    let relative = maven_path(name)?;
+    let base = lib["url"]
+        .as_str()
+        .unwrap_or("https://libraries.minecraft.net/")
+        .trim_end_matches('/');
+    let url = format!("{base}/{relative}");
+    let path = safe_join(root, &format!("libraries/{relative}"))?;
+    let sha1 = lib["sha1"].as_str().map(str::to_owned);
+    let sha256 = lib["sha256"].as_str().map(str::to_owned);
+    if sha1.is_none() && sha256.is_none() {
+        bail!("Maven library {name} is missing an integrity hash.");
+    }
+    Ok((
+        Download {
+            url,
+            path: path.clone(),
+            sha1,
+            sha256,
+            size: lib["size"].as_u64(),
+        },
+        path,
+    ))
+}
+
 pub fn libraries(
     root: &Path,
     version: &Value,
@@ -58,6 +105,10 @@ pub fn libraries(
                 ),
             )?;
             downloads.push(artifact(a, path.clone())?);
+            classpath.push(path);
+        } else if lib.get("name").and_then(Value::as_str).is_some() {
+            let (download, path) = maven_download(lib, root)?;
+            downloads.push(download);
             classpath.push(path);
         }
         if let Some(classifier) = lib["natives"][crate::rules::os_name()].as_str() {
@@ -248,6 +299,34 @@ mod tests {
         assert_eq!(d.len(), 1);
         assert_eq!(cp.len(), 1);
         assert!(n.is_empty());
+    }
+
+    #[test]
+    fn maven_coordinates_map_to_paths() {
+        assert_eq!(
+            maven_path("net.fabricmc:fabric-loader:0.19.5").unwrap(),
+            "net/fabricmc/fabric-loader/0.19.5/fabric-loader-0.19.5.jar"
+        );
+        assert_eq!(
+            maven_path("net.fabricmc:sponge-mixin:0.17.4+mixin.0.8.7").unwrap(),
+            "net/fabricmc/sponge-mixin/0.17.4+mixin.0.8.7/sponge-mixin-0.17.4+mixin.0.8.7.jar"
+        );
+    }
+
+    #[test]
+    fn maven_libraries_are_accepted() {
+        let v = serde_json::json!({
+            "libraries": [{
+                "name": "org.ow2.asm:asm:9.10.1",
+                "url": "https://maven.fabricmc.net/",
+                "sha1": "ada2141c0cc52ee8f5c48cd5fa4ce0e794f22236",
+                "size": 126151
+            }]
+        });
+        let (d, cp, _) = libraries(Path::new("root"), &v).unwrap();
+        assert_eq!(d.len(), 1);
+        assert!(d[0].url.contains("maven.fabricmc.net/org/ow2/asm/asm/9.10.1/asm-9.10.1.jar"));
+        assert_eq!(cp.len(), 1);
     }
 }
 #[cfg(test)]

@@ -584,6 +584,116 @@ main {
   margin-top: 2px;
 }
 
+.home-instance-title {
+  margin: 4px 0 2px;
+  font-family: "Syne", ui-sans-serif, sans-serif;
+  font-size: clamp(1.35rem, 2.2vw, 1.85rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: var(--atmosphere-ink);
+}
+
+.home-instance-title span {
+  display: block;
+  margin-top: 4px;
+  font-family: "Source Sans 3", ui-sans-serif, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: color-mix(in srgb, var(--atmosphere-ink) 55%, transparent);
+}
+
+.home-cta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.hub-page {
+  gap: 16px;
+}
+
+.hub-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.downloads-page .download-card {
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.download-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 18px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+}
+
+.downloads-idle {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+
+.download-stages {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.download-stage {
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--card) 70%, transparent);
+}
+
+.download-stage span {
+  display: block;
+  font-size: 11px;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  letter-spacing: 0.04em;
+}
+
+.download-stage small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+
+.download-stage.current {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  background: color-mix(in srgb, var(--accent) 12%, var(--card));
+}
+
+.status-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+.status-link:hover {
+  color: var(--accent);
+}
+
 .instance-select {
   padding: 0 !important;
   border: 0 !important;
@@ -1063,6 +1173,53 @@ progress {
 .file-row p {
   margin-top: 2px;
   font-size: 12px;
+}
+
+.mods-tabs,
+.mods-search {
+  flex-wrap: wrap;
+}
+
+.mods-search {
+  gap: 10px;
+}
+
+.mods-search Input,
+.mods-search input {
+  flex: 1;
+  min-width: 180px;
+}
+
+.mods-search-meta {
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+.mod-actions {
+  align-items: center;
+  gap: 4px;
+}
+
+.mod-disabled {
+  opacity: 0.55;
+  text-decoration: line-through;
+}
+
+.modrinth-hit {
+  align-items: flex-start;
+}
+
+.modrinth-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: var(--surface-deep);
+  flex-shrink: 0;
+}
+
+.modrinth-meta {
+  opacity: 0.8;
 }
 
 .shot-grid {

@@ -22,10 +22,22 @@ import { command, message } from "@/lib/api";
 import {
   instanceSchema,
   defaultMemory,
+  loaderLabel,
+  type LoaderType,
+  type LoaderVersion,
   type Instance,
   type Manifest,
   type Runtime,
 } from "@/lib/models";
+
+const LOADER_OPTIONS: { type: LoaderType; label: string }[] = [
+  { type: "vanilla", label: "Vanilla" },
+  { type: "fabric", label: "Fabric" },
+  { type: "quilt", label: "Quilt" },
+  { type: "forge", label: "Forge" },
+  { type: "neoforge", label: "NeoForge" },
+];
+
 export function InstanceEditor({
   open,
   onClose,
@@ -47,9 +59,14 @@ export function InstanceEditor({
 }) {
   const [name, setName] = useState("");
   const [version, setVersion] = useState("");
+  const [loaderType, setLoaderType] = useState<LoaderType>("vanilla");
+  const [loaderVersion, setLoaderVersion] = useState("");
+  const [loaderVersions, setLoaderVersions] = useState<LoaderVersion[]>([]);
+  const [loadingLoaders, setLoadingLoaders] = useState(false);
   const [ram, setRam] = useState([1024, 4096]);
   const [java, setJava] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
   useEffect(() => {
     if (open) {
       setName(instance?.name ?? "My world");
@@ -59,6 +76,13 @@ export function InstanceEditor({
           manifest?.latest.release ??
           "",
       );
+      const type = instance?.loader.type;
+      setLoaderType(
+        type && LOADER_OPTIONS.some((o) => o.type === type)
+          ? (type as LoaderType)
+          : "vanilla",
+      );
+      setLoaderVersion(instance?.loader.version ?? "");
       setRam(
         instance
           ? [instance.memory.minimumMb, instance.memory.maximumMb]
@@ -67,6 +91,42 @@ export function InstanceEditor({
       setJava(instance?.java.path ?? null);
     }
   }, [open, instance, preferredVersion, manifest, totalMemory]);
+
+  useEffect(() => {
+    if (!open || loaderType === "vanilla" || !version) {
+      setLoaderVersions([]);
+      return;
+    }
+    let cancelled = false;
+    setLoadingLoaders(true);
+    void command<LoaderVersion[]>("loader_versions", {
+      loader: loaderType,
+      gameVersion: version,
+    })
+      .then((list) => {
+        if (cancelled) return;
+        setLoaderVersions(list);
+        setLoaderVersion((current) => {
+          if (current && list.some((l) => l.version === current)) return current;
+          const stable = list.find((l) => l.stable);
+          return stable?.version ?? list[0]?.version ?? "";
+        });
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setLoaderVersions([]);
+          setLoaderVersion("");
+          onError(message(e));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingLoaders(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, loaderType, version, onError]);
+
   async function save() {
     setSaving(true);
     try {
@@ -74,7 +134,10 @@ export function InstanceEditor({
         id: instance?.id ?? crypto.randomUUID(),
         name,
         minecraftVersion: version,
-        loader: { type: "vanilla" },
+        loader:
+          loaderType === "vanilla"
+            ? { type: "vanilla", version: null }
+            : { type: loaderType, version: loaderVersion },
         java: { mode: java ? "custom" : "automatic", path: java },
         memory: { minimumMb: ram[0], maximumMb: ram[1] },
         lastPlayed: instance?.lastPlayed ?? null,
@@ -89,10 +152,17 @@ export function InstanceEditor({
       setSaving(false);
     }
   }
+
   const maxRam = Math.min(
     65536,
     Math.max(2048, Math.floor((totalMemory * 0.75) / 512) * 512),
   );
+  const canSave =
+    Boolean(version && name.trim()) &&
+    (loaderType === "vanilla" || Boolean(loaderVersion));
+  const loaderName =
+    LOADER_OPTIONS.find((o) => o.type === loaderType)?.label ?? loaderType;
+
   return (
     <Dialog
       open={open}
@@ -132,6 +202,53 @@ export function InstanceEditor({
                 ))}
             </SelectContent>
           </Select>
+          <Label>Loader</Label>
+          <div className="row" style={{ flexWrap: "wrap", gap: 8 }}>
+            {LOADER_OPTIONS.map((opt) => (
+              <Button
+                key={opt.type}
+                variant={loaderType === opt.type ? "secondary" : "outline"}
+                onClick={() => setLoaderType(opt.type)}
+              >
+                {opt.label}
+              </Button>
+            ))}
+          </div>
+          {loaderType !== "vanilla" && (
+            <>
+              <Label>{loaderName} version</Label>
+              <Select
+                value={loaderVersion}
+                onValueChange={setLoaderVersion}
+                disabled={loadingLoaders || !loaderVersions.length}
+              >
+                <SelectTrigger>
+                  <SelectValue
+                    placeholder={
+                      loadingLoaders
+                        ? `Loading ${loaderName} versions…`
+                        : `Choose ${loaderName} version`
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {loaderVersions.map((l) => (
+                    <SelectItem key={l.version} value={l.version}>
+                      {l.version}
+                      {l.stable ? " · recommended" : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p>
+                {loaderLabel({
+                  loader: { type: loaderType, version: loaderVersion || null },
+                })}{" "}
+                installs into this instance only. Mods go in the instance mods
+                folder.
+              </p>
+            </>
+          )}
           <Label>
             Memory · {ram[0]}–{ram[1]} MB
           </Label>
@@ -180,7 +297,7 @@ export function InstanceEditor({
           </Button>
           <Button
             onClick={() => void save()}
-            disabled={saving || !version || !name.trim()}
+            disabled={saving || !canSave}
           >
             Save instance
           </Button>
