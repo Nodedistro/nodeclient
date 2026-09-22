@@ -36,17 +36,30 @@ pub fn neoforge_profile_id(loader_version: &str) -> String {
     format!("neoforge-{loader_version}")
 }
 
-/// Map Minecraft `1.x` / `1.x.y` to the NeoForge version prefix (`x.0.` / `x.y.`).
+/// Map a Minecraft version id to the NeoForge maven version prefix.
+///
+/// Classic ids (`1.21`, `1.21.1`) drop the leading `1.` (`21.0.`, `21.1.`).
+/// Newer ids (`26.1`, `26.1.2`) keep the full version (`26.1.`, `26.1.2.`).
 pub fn neoforge_prefix(game_version: &str) -> Result<String> {
     let parts: Vec<&str> = game_version.split('.').collect();
-    if parts.first() != Some(&"1") {
-        bail!("NeoForge requires Minecraft 1.x versions.");
+    if parts.is_empty() || parts.iter().any(|p| p.is_empty()) {
+        bail!("Unsupported Minecraft version for NeoForge.");
     }
-    match parts.as_slice() {
-        [_, minor] => Ok(format!("{minor}.0.")),
-        [_, minor, patch] => Ok(format!("{minor}.{patch}.")),
-        _ => bail!("Unsupported Minecraft version for NeoForge."),
+    if !parts.iter().all(|p| p.bytes().all(|b| b.is_ascii_digit())) {
+        bail!("Unsupported Minecraft version for NeoForge.");
     }
+    if parts.first() == Some(&"1") {
+        return match parts.as_slice() {
+            [_, minor] => Ok(format!("{minor}.0.")),
+            [_, minor, patch] => Ok(format!("{minor}.{patch}.")),
+            _ => bail!("Unsupported Minecraft version for NeoForge."),
+        };
+    }
+    // Post-1.x Mojang ids (e.g. 26.1 / 26.1.2): NeoForge versions start with the same id.
+    if parts.len() < 2 || parts.len() > 3 {
+        bail!("Unsupported Minecraft version for NeoForge.");
+    }
+    Ok(format!("{game_version}."))
 }
 
 pub async fn list_forge(game_version: &str) -> Result<Vec<FabricLoaderVersion>> {
@@ -102,23 +115,37 @@ pub async fn list_neoforge(game_version: &str) -> Result<Vec<FabricLoaderVersion
     .context("Could not load NeoForge versions.")?;
     let list: NeoVersions =
         serde_json::from_value(raw).context("Invalid NeoForge version list.")?;
-    let mut versions: Vec<String> = list
+    let matching: Vec<String> = list
         .versions
         .into_iter()
         .filter(|v| v.starts_with(&prefix))
-        .filter(|v| !v.contains("beta") && !v.contains("alpha"))
         .filter(|v| safe_id(v).is_ok())
         .collect();
+    let mut stable: Vec<String> = matching
+        .iter()
+        .filter(|v| !v.contains("beta") && !v.contains("alpha"))
+        .cloned()
+        .collect();
+    // Newer Minecraft releases (e.g. 26.3) may only have NeoForge betas yet.
+    let mut versions = if stable.is_empty() {
+        matching
+    } else {
+        std::mem::take(&mut stable)
+    };
     versions.sort_by(|a, b| compare_version(b, a));
     versions.dedup();
     if versions.is_empty() {
         bail!("No NeoForge builds are available for Minecraft {game_version}.");
     }
-    let latest = versions.first().cloned();
+    let recommended = versions
+        .iter()
+        .find(|v| !v.contains("beta") && !v.contains("alpha"))
+        .cloned()
+        .or_else(|| versions.first().cloned());
     Ok(versions
         .into_iter()
         .map(|version| FabricLoaderVersion {
-            stable: latest.as_ref() == Some(&version),
+            stable: recommended.as_ref() == Some(&version),
             version,
         })
         .collect())
@@ -339,6 +366,11 @@ mod tests {
         assert_eq!(neoforge_prefix("1.21.1").unwrap(), "21.1.");
         assert_eq!(neoforge_prefix("1.20.1").unwrap(), "20.1.");
         assert_eq!(neoforge_prefix("1.21").unwrap(), "21.0.");
+        assert_eq!(neoforge_prefix("26.1").unwrap(), "26.1.");
+        assert_eq!(neoforge_prefix("26.1.2").unwrap(), "26.1.2.");
+        assert_eq!(neoforge_prefix("26.3").unwrap(), "26.3.");
+        assert!(neoforge_prefix("snapshot").is_err());
+        assert!(neoforge_prefix("1").is_err());
     }
 
     #[test]

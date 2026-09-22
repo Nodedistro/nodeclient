@@ -235,7 +235,13 @@ export function InstanceEditor({
                   {loaderVersions.map((l) => (
                     <SelectItem key={l.version} value={l.version}>
                       {l.version}
-                      {l.stable ? " · recommended" : ""}
+                      {l.stable
+                        ? l.version.includes("beta") || l.version.includes("alpha")
+                          ? " · latest beta"
+                          : " · recommended"
+                        : l.version.includes("beta") || l.version.includes("alpha")
+                          ? " · beta"
+                          : ""}
                     </SelectItem>
                   ))}
                 </SelectContent>

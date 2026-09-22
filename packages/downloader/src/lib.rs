@@ -32,7 +32,7 @@ pub struct Progress {
 pub type Reporter = Arc<dyn Fn(Progress) + Send + Sync>;
 pub fn client() -> Result<reqwest::Client> {
     Ok(reqwest::Client::builder()
-        .user_agent("NodeClient/0.1.6 (https://github.com/Nodedistro/nodeclient)")
+        .user_agent("NodeClient/0.1.7 (https://github.com/Nodedistro/nodeclient)")
         .https_only(true)
         .redirect(reqwest::redirect::Policy::none())
         .tcp_nodelay(true)
