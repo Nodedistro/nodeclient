@@ -1087,6 +1087,15 @@ progress {
   background: var(--surface-deep);
 }
 
+.shot-card-fallback {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  color: var(--muted-foreground);
+  background: var(--surface-deep);
+}
+
 .shot-card figcaption {
   display: flex;
   align-items: center;

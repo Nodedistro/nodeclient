@@ -247,6 +247,15 @@ fn delete_screenshot(
     instance_content::delete_screenshot(&root, &id, &name).map_err(error)
 }
 #[tauri::command]
+fn read_screenshot(
+    state: tauri::State<AppState>,
+    id: String,
+    name: String,
+) -> CommandResult<Vec<u8>> {
+    let root = state.store.lock().unwrap().root.clone();
+    instance_content::read_screenshot(&root, &id, &name).map_err(error)
+}
+#[tauri::command]
 fn open_instance_folder(
     state: tauri::State<AppState>,
     id: String,
@@ -700,6 +709,7 @@ fn main() {
             remove_mod,
             list_screenshots,
             delete_screenshot,
+            read_screenshot,
             open_instance_folder,
             list_servers,
             save_servers,

@@ -144,6 +144,19 @@ pub fn delete_screenshot(root: &Path, id: &str, name: &str) -> Result<()> {
     Ok(())
 }
 
+pub fn read_screenshot(root: &Path, id: &str, name: &str) -> Result<Vec<u8>> {
+    safe_id(name)?;
+    let path = safe_join(&instance_subdir(root, id, "screenshots")?, name)?;
+    if !path.is_file() {
+        bail!("Screenshot not found.");
+    }
+    let meta = fs::metadata(&path)?;
+    if meta.len() > 25 * 1024 * 1024 {
+        bail!("Screenshot is too large to preview.");
+    }
+    Ok(fs::read(path)?)
+}
+
 pub fn open_subdir(root: &Path, id: &str, folder: &str) -> Result<()> {
     if !["mods", "screenshots"].contains(&folder) {
         bail!("Unsupported instance folder.");

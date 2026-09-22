@@ -1,5 +1,4 @@
-import { useEffect, useState } from "react";
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { useEffect, useRef, useState } from "react";
 import { FolderOpen, Image, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { command } from "@/lib/api";
@@ -11,6 +10,36 @@ type FileEntry = {
   size: number;
   modified: number | null;
 };
+
+function mimeFor(name: string) {
+  const lower = name.toLowerCase();
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+  return "image/png";
+}
+
+async function previewMap(id: string, shots: FileEntry[]) {
+  const map: Record<string, string> = {};
+  await Promise.all(
+    shots.map(async (shot) => {
+      try {
+        const bytes = await command<number[]>("read_screenshot", {
+          id,
+          name: shot.name,
+        });
+        map[shot.name] = URL.createObjectURL(
+          new Blob([new Uint8Array(bytes)], { type: mimeFor(shot.name) }),
+        );
+      } catch {
+        // Preview stays empty; card still lists the file.
+      }
+    }),
+  );
+  return map;
+}
+
+function revokeAll(urls: Record<string, string>) {
+  Object.values(urls).forEach((url) => URL.revokeObjectURL(url));
+}
 
 export function ScreenshotsPage({
   instances,
@@ -26,20 +55,39 @@ export function ScreenshotsPage({
   onSelectInstance: (id: string) => void;
 }) {
   const [shots, setShots] = useState<FileEntry[]>([]);
+  const [previews, setPreviews] = useState<Record<string, string>>({});
+  const previewsRef = useRef(previews);
+  previewsRef.current = previews;
   const id = selectedId ?? instances[0]?.id;
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       if (!desktop || !id) {
-        if (!cancelled) setShots([]);
+        if (!cancelled) {
+          revokeAll(previewsRef.current);
+          setShots([]);
+          setPreviews({});
+        }
         return;
       }
       try {
         const next = await command<FileEntry[]>("list_screenshots", { id });
-        if (!cancelled) setShots(next);
+        if (cancelled) return;
+        setShots(next);
+        const map = await previewMap(id, next);
+        if (cancelled) {
+          revokeAll(map);
+          return;
+        }
+        revokeAll(previewsRef.current);
+        setPreviews(map);
       } catch {
-        if (!cancelled) setShots([]);
+        if (!cancelled) {
+          revokeAll(previewsRef.current);
+          setShots([]);
+          setPreviews({});
+        }
       }
     })();
     return () => {
@@ -47,12 +95,22 @@ export function ScreenshotsPage({
     };
   }, [id, desktop]);
 
+  useEffect(() => {
+    return () => revokeAll(previewsRef.current);
+  }, []);
+
   const refresh = async () => {
     if (!desktop || !id) {
+      revokeAll(previewsRef.current);
       setShots([]);
+      setPreviews({});
       return;
     }
-    setShots(await command<FileEntry[]>("list_screenshots", { id }));
+    const next = await command<FileEntry[]>("list_screenshots", { id });
+    const map = await previewMap(id, next);
+    revokeAll(previewsRef.current);
+    setShots(next);
+    setPreviews(map);
   };
 
   if (!id) {
@@ -111,11 +169,13 @@ export function ScreenshotsPage({
         <div className="shot-grid">
           {shots.map((shot) => (
             <figure key={shot.name} className="shot-card">
-              <img
-                src={desktop ? convertFileSrc(shot.path) : ""}
-                alt={shot.name}
-                loading="lazy"
-              />
+              {previews[shot.name] ? (
+                <img src={previews[shot.name]} alt={shot.name} loading="lazy" />
+              ) : (
+                <div className="shot-card-fallback" aria-hidden>
+                  <Image size={28} />
+                </div>
+              )}
               <figcaption>
                 <span>{shot.name}</span>
                 <Button
