@@ -32,7 +32,7 @@ pub struct Progress {
 pub type Reporter = Arc<dyn Fn(Progress) + Send + Sync>;
 pub fn client() -> Result<reqwest::Client> {
     Ok(reqwest::Client::builder()
-        .user_agent("NodeClient/0.1.7 (https://github.com/Nodedistro/nodeclient)")
+        .user_agent("NodeClient/0.1.8 (https://github.com/Nodedistro/nodeclient)")
         .https_only(true)
         .redirect(reqwest::redirect::Policy::none())
         .tcp_nodelay(true)
@@ -59,6 +59,7 @@ pub fn official_url(value: &str) -> Result<()> {
             "maven.fabricmc.net",
             "meta.quiltmc.org",
             "maven.quiltmc.net",
+            "maven.quiltmc.org",
             "maven.minecraftforge.net",
             "files.minecraftforge.net",
             "maven.neoforged.net",
@@ -293,6 +294,7 @@ mod tests {
         assert!(official_url("https://libraries.minecraft.net/a.jar").is_ok());
         assert!(official_url("https://meta.fabricmc.net/v2/versions/loader").is_ok());
         assert!(official_url("https://maven.fabricmc.net/net/fabricmc/fabric-loader/0.1/a.jar").is_ok());
+        assert!(official_url("https://maven.quiltmc.org/repository/release/a.jar").is_ok());
         assert!(official_url("https://api.modrinth.com/v2/search").is_ok());
         assert!(official_url("https://cdn.modrinth.com/data/AA/versions/1/a.jar").is_ok());
         for u in [

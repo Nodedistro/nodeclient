@@ -1,5 +1,5 @@
 use anyhow::{bail, Context, Result};
-use nodeclient_downloader::{download_all, Download, Reporter};
+use nodeclient_downloader::{download_all, fetch_trusted_text, Download, Reporter};
 use nodeclient_types::{safe_id, safe_join};
 use serde_json::Value;
 use std::{
@@ -54,7 +54,7 @@ pub fn artifact(value: &Value, path: PathBuf) -> Result<Download> {
     })
 }
 
-fn maven_download(lib: &Value, root: &Path) -> Result<(Download, PathBuf)> {
+async fn maven_download(lib: &Value, root: &Path) -> Result<(Download, PathBuf)> {
     let name = lib["name"]
         .as_str()
         .context("Maven library name missing")?;
@@ -65,8 +65,20 @@ fn maven_download(lib: &Value, root: &Path) -> Result<(Download, PathBuf)> {
         .trim_end_matches('/');
     let url = format!("{base}/{relative}");
     let path = safe_join(root, &format!("libraries/{relative}"))?;
-    let sha1 = lib["sha1"].as_str().map(str::to_owned);
-    let sha256 = lib["sha256"].as_str().map(str::to_owned);
+    let mut sha1 = lib["sha1"].as_str().map(str::to_owned);
+    let mut sha256 = lib["sha256"].as_str().map(str::to_owned);
+    // Fabric/Quilt profiles often omit hashes; use Maven sidecar checksums.
+    if sha1.is_none() && sha256.is_none() {
+        if let Ok(text) = fetch_trusted_text(&format!("{url}.sha1"), 256).await {
+            sha1 = Some(parse_sidecar_hash(&text, 40).with_context(|| {
+                format!("Maven library {name} returned an invalid SHA-1 sidecar.")
+            })?);
+        } else if let Ok(text) = fetch_trusted_text(&format!("{url}.sha256"), 128).await {
+            sha256 = Some(parse_sidecar_hash(&text, 64).with_context(|| {
+                format!("Maven library {name} returned an invalid SHA-256 sidecar.")
+            })?);
+        }
+    }
     if sha1.is_none() && sha256.is_none() {
         bail!("Maven library {name} is missing an integrity hash.");
     }
@@ -82,7 +94,19 @@ fn maven_download(lib: &Value, root: &Path) -> Result<(Download, PathBuf)> {
     ))
 }
 
-pub fn libraries(
+fn parse_sidecar_hash(text: &str, expected_len: usize) -> Result<String> {
+    let hash = text
+        .split_whitespace()
+        .next()
+        .context("Checksum sidecar is empty.")?
+        .to_ascii_lowercase();
+    if hash.len() != expected_len || !hash.bytes().all(|b| b.is_ascii_hexdigit()) {
+        bail!("Checksum sidecar is invalid.");
+    }
+    Ok(hash)
+}
+
+pub async fn libraries(
     root: &Path,
     version: &Value,
 ) -> Result<(Vec<Download>, Vec<PathBuf>, Vec<PathBuf>)> {
@@ -107,7 +131,7 @@ pub fn libraries(
             downloads.push(artifact(a, path.clone())?);
             classpath.push(path);
         } else if lib.get("name").and_then(Value::as_str).is_some() {
-            let (download, path) = maven_download(lib, root)?;
+            let (download, path) = maven_download(lib, root).await?;
             downloads.push(download);
             classpath.push(path);
         }
@@ -158,7 +182,7 @@ pub async fn install(
     )
     .await?;
     let asset_index: Value = serde_json::from_slice(&tokio::fs::read(index_path).await?)?;
-    let (mut downloads, mut classpath, native_archives) = libraries(root, version)?;
+    let (mut downloads, mut classpath, native_archives) = libraries(root, version).await?;
     let client_path = safe_join(root, &format!("versions/{id}/{id}.jar"))?;
     downloads.push(artifact(
         &version["downloads"]["client"],
@@ -292,10 +316,10 @@ pub fn extract_natives(archive: &Path, destination: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn selects_platform_libraries() {
+    #[tokio::test]
+    async fn selects_platform_libraries() {
         let v = serde_json::json!({"libraries":[{"name":"a","rules":[{"action":"allow","os":{"name":"impossible"}}],"downloads":{"artifact":{"path":"bad","url":"bad","sha1":"bad"}}},{"name":"b","downloads":{"artifact":{"path":"org/b.jar","url":"https://libraries.minecraft.net/org/b.jar","sha1":"abc","size":3}}}]});
-        let (d, cp, n) = libraries(Path::new("root"), &v).unwrap();
+        let (d, cp, n) = libraries(Path::new("root"), &v).await.unwrap();
         assert_eq!(d.len(), 1);
         assert_eq!(cp.len(), 1);
         assert!(n.is_empty());
@@ -313,8 +337,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn maven_libraries_are_accepted() {
+    #[tokio::test]
+    async fn maven_libraries_are_accepted() {
         let v = serde_json::json!({
             "libraries": [{
                 "name": "org.ow2.asm:asm:9.10.1",
@@ -323,10 +347,19 @@ mod tests {
                 "size": 126151
             }]
         });
-        let (d, cp, _) = libraries(Path::new("root"), &v).unwrap();
+        let (d, cp, _) = libraries(Path::new("root"), &v).await.unwrap();
         assert_eq!(d.len(), 1);
         assert!(d[0].url.contains("maven.fabricmc.net/org/ow2/asm/asm/9.10.1/asm-9.10.1.jar"));
         assert_eq!(cp.len(), 1);
+    }
+
+    #[test]
+    fn sidecar_hash_parsing() {
+        assert_eq!(
+            parse_sidecar_hash("ff9e65cffca4a67f31523e1807fe0855940fcbfa\n", 40).unwrap(),
+            "ff9e65cffca4a67f31523e1807fe0855940fcbfa"
+        );
+        assert!(parse_sidecar_hash("not-a-hash", 40).is_err());
     }
 }
 #[cfg(test)]
