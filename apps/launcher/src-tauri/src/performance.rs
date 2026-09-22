@@ -27,7 +27,7 @@ pub const ALLOWED_JVM_FLAGS: &[&str] = &[
 ];
 
 pub fn jvm_preset(name: &str) -> Result<Vec<String>> {
-    let flags = match name {
+    let flags: Vec<String> = match name {
         "default" => vec![],
         "balanced" => vec![
             "-XX:+UseG1GC".into(),
