@@ -1,6 +1,21 @@
 import { useEffect, useRef, useState } from "react";
-import { FolderOpen, Image, Trash2 } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  FolderOpen,
+  Image,
+  Maximize2,
+  Minimize2,
+  Trash2,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { command } from "@/lib/api";
 import type { Instance } from "@/lib/models";
 
@@ -56,9 +71,15 @@ export function ScreenshotsPage({
 }) {
   const [shots, setShots] = useState<FileEntry[]>([]);
   const [previews, setPreviews] = useState<Record<string, string>>({});
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const lightboxRef = useRef<HTMLDivElement>(null);
   const previewsRef = useRef(previews);
   previewsRef.current = previews;
   const id = selectedId ?? instances[0]?.id;
+  const active =
+    viewerIndex !== null && shots[viewerIndex] ? shots[viewerIndex] : null;
+  const activeSrc = active ? previews[active.name] : undefined;
 
   useEffect(() => {
     let cancelled = false;
@@ -68,6 +89,7 @@ export function ScreenshotsPage({
           revokeAll(previewsRef.current);
           setShots([]);
           setPreviews({});
+          setViewerIndex(null);
         }
         return;
       }
@@ -99,11 +121,42 @@ export function ScreenshotsPage({
     return () => revokeAll(previewsRef.current);
   }, []);
 
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () =>
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, []);
+
+  useEffect(() => {
+    if (viewerIndex === null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        setViewerIndex((i) =>
+          i === null || shots.length === 0
+            ? i
+            : (i + shots.length - 1) % shots.length,
+        );
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        setViewerIndex((i) =>
+          i === null || shots.length === 0 ? i : (i + 1) % shots.length,
+        );
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [viewerIndex, shots.length]);
+
   const refresh = async () => {
     if (!desktop || !id) {
       revokeAll(previewsRef.current);
       setShots([]);
       setPreviews({});
+      setViewerIndex(null);
       return;
     }
     const next = await command<FileEntry[]>("list_screenshots", { id });
@@ -111,6 +164,31 @@ export function ScreenshotsPage({
     revokeAll(previewsRef.current);
     setShots(next);
     setPreviews(map);
+  };
+
+  const closeViewer = async () => {
+    if (document.fullscreenElement) {
+      try {
+        await document.exitFullscreen();
+      } catch {
+        // Ignore fullscreen exit failures.
+      }
+    }
+    setViewerIndex(null);
+  };
+
+  const toggleFullscreen = async () => {
+    const node = lightboxRef.current;
+    if (!node) return;
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      } else {
+        await node.requestFullscreen();
+      }
+    } catch {
+      // Fullscreen may be blocked by the host; large dialog still works.
+    }
   };
 
   if (!id) {
@@ -167,10 +245,21 @@ export function ScreenshotsPage({
         </div>
       ) : (
         <div className="shot-grid">
-          {shots.map((shot) => (
+          {shots.map((shot, index) => (
             <figure key={shot.name} className="shot-card">
               {previews[shot.name] ? (
-                <img src={previews[shot.name]} alt={shot.name} loading="lazy" />
+                <button
+                  type="button"
+                  className="shot-thumb"
+                  onClick={() => setViewerIndex(index)}
+                  aria-label={`View ${shot.name}`}
+                >
+                  <img
+                    src={previews[shot.name]}
+                    alt={shot.name}
+                    loading="lazy"
+                  />
+                </button>
               ) : (
                 <div className="shot-card-fallback" aria-hidden>
                   <Image size={28} />
@@ -188,6 +277,7 @@ export function ScreenshotsPage({
                         id,
                         name: shot.name,
                       });
+                      if (viewerIndex === index) await closeViewer();
                       await refresh();
                     })
                   }
@@ -199,6 +289,99 @@ export function ScreenshotsPage({
           ))}
         </div>
       )}
+
+      <Dialog
+        open={viewerIndex !== null && Boolean(activeSrc)}
+        onOpenChange={(open) => {
+          if (!open) void closeViewer();
+        }}
+      >
+        <DialogContent
+          showCloseButton={false}
+          className="shot-lightbox-content border-0 bg-transparent p-0 shadow-none sm:max-w-none"
+        >
+          <div
+            ref={lightboxRef}
+            className={`shot-lightbox${isFullscreen ? " is-fullscreen" : ""}`}
+          >
+            <DialogTitle className="sr-only">
+              {active?.name ?? "Screenshot"}
+            </DialogTitle>
+            <DialogDescription className="sr-only">
+              Full-size screenshot preview. Use arrow keys to browse, Escape to
+              close.
+            </DialogDescription>
+            <div className="shot-lightbox-bar">
+              <span className="shot-lightbox-name">{active?.name}</span>
+              <div className="row">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={
+                    isFullscreen ? "Exit fullscreen" : "Enter fullscreen"
+                  }
+                  onClick={() => void toggleFullscreen()}
+                >
+                  {isFullscreen ? (
+                    <Minimize2 size={18} />
+                  ) : (
+                    <Maximize2 size={18} />
+                  )}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Close"
+                  onClick={() => void closeViewer()}
+                >
+                  <X size={18} />
+                </Button>
+              </div>
+            </div>
+            <div className="shot-lightbox-stage">
+              {shots.length > 1 && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="shot-lightbox-nav prev"
+                  aria-label="Previous screenshot"
+                  onClick={() =>
+                    setViewerIndex((i) =>
+                      i === null
+                        ? i
+                        : (i + shots.length - 1) % shots.length,
+                    )
+                  }
+                >
+                  <ChevronLeft size={28} />
+                </Button>
+              )}
+              {activeSrc && (
+                <img
+                  src={activeSrc}
+                  alt={active?.name ?? "Screenshot"}
+                  className="shot-lightbox-image"
+                />
+              )}
+              {shots.length > 1 && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="shot-lightbox-nav next"
+                  aria-label="Next screenshot"
+                  onClick={() =>
+                    setViewerIndex((i) =>
+                      i === null ? i : (i + 1) % shots.length,
+                    )
+                  }
+                >
+                  <ChevronRight size={28} />
+                </Button>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
