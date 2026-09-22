@@ -1,0 +1,13 @@
+[package]
+name = "nodeclient-java"
+version = "0.1.0"
+edition = "2021"
+[dependencies]
+anyhow.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+regex.workspace = true
+nodeclient-types.workspace = true
+nodeclient-downloader.workspace = true
+reqwest.workspace = true

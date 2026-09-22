@@ -1,0 +1,22 @@
+[workspace]
+resolver = "2"
+members = ["apps/launcher/src-tauri", "packages/shared-types", "packages/minecraft-auth", "packages/downloader", "packages/minecraft-core", "packages/profile-manager", "packages/process-manager", "packages/java-manager"]
+
+[workspace.dependencies]
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
+sha1 = "0.10"
+sha2 = "0.10"
+hex = "0.4"
+uuid = { version = "1", features = ["v4"] }
+regex = "1"
+nodeclient-types = { path = "packages/shared-types" }
+nodeclient-downloader = { path = "packages/downloader" }
+nodeclient-auth = { path = "packages/minecraft-auth" }
+nodeclient-profiles = { path = "packages/profile-manager" }
+nodeclient-java = { path = "packages/java-manager" }
+nodeclient-core = { path = "packages/minecraft-core" }
+nodeclient-process = { path = "packages/process-manager" }

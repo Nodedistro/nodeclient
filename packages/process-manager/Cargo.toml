@@ -1,0 +1,10 @@
+[package]
+name = "nodeclient-process"
+version = "0.1.0"
+edition = "2021"
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+tokio.workspace = true
+nodeclient-types.workspace = true
+serde_json.workspace = true

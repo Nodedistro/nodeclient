@@ -1,0 +1,27 @@
+[package]
+name = "nodeclient"
+version = "0.1.0"
+edition = "2021"
+
+[build-dependencies]
+dotenvy = "0.15"
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+reqwest.workspace = true
+nodeclient-types.workspace = true
+nodeclient-auth.workspace = true
+nodeclient-profiles.workspace = true
+nodeclient-core.workspace = true
+nodeclient-java.workspace = true
+nodeclient-process.workspace = true
+nodeclient-downloader.workspace = true
+dotenvy = "0.15"
+open = "5"
+rfd = "0.15"
+sysinfo = "0.33"

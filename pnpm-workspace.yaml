@@ -1,0 +1,6 @@
+packages:
+  - apps/*
+  - packages/ui
+allowBuilds:
+  esbuild: true
+  pnpm: false

@@ -1,0 +1,14 @@
+{
+  "name": "nodeclient",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.19.0",
+  "scripts": {
+    "dev": "pnpm --dir apps/launcher dev",
+    "build": "pnpm --dir apps/launcher build",
+    "lint": "pnpm --dir apps/launcher lint",
+    "typecheck": "pnpm --dir apps/launcher typecheck",
+    "test": "pnpm --dir apps/launcher test && cargo test --workspace --lib -j 1",
+    "tauri": "pnpm --dir apps/launcher tauri"
+  }
+}

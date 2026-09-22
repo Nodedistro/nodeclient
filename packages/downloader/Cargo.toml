@@ -1,0 +1,15 @@
+[package]
+name = "nodeclient-downloader"
+version = "0.1.0"
+edition = "2021"
+[dependencies]
+anyhow.workspace = true
+tokio.workspace = true
+reqwest.workspace = true
+sha1.workspace = true
+sha2.workspace = true
+hex.workspace = true
+serde.workspace = true
+nodeclient-types.workspace = true
+futures-util = "0.3"
+uuid.workspace = true
