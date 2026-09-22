@@ -34,6 +34,7 @@ export function SettingsPanel({
   onAccounts,
   onEdit,
   initialSection = "General",
+  selectedInstanceId = null,
 }: {
   settings: Settings;
   onSave: (s: Settings) => Promise<void>;
@@ -41,16 +42,69 @@ export function SettingsPanel({
   onAccounts: () => void;
   onEdit: () => void;
   initialSection?: string;
+  selectedInstanceId?: string | null;
 }) {
   const [draft, setDraft] = useState(settings);
   const [section, setSection] = useState(initialSection);
   const [runtimes, setRuntimes] = useState<Runtime[]>([]);
   const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [perfNote, setPerfNote] = useState<string | null>(null);
   useEffect(() => setDraft(settings), [settings]);
   useEffect(() => setSection(initialSection), [initialSection]);
   const update = <K extends keyof Settings>(key: K, value: Settings[K]) => {
     setDraft({ ...draft, [key]: value });
     setSaved(false);
+  };
+  const applyJvmPreset = async (preset: string) => {
+    try {
+      const args = await command<string[]>("jvm_performance_preset", { preset });
+      setDraft((d) => ({ ...d, jvmArguments: args }));
+      setSaved(false);
+      setPerfNote(
+        preset === "default"
+          ? "Cleared JVM tuning flags. Save settings to apply."
+          : `Applied ${preset} JVM preset. Save settings to apply.`,
+      );
+    } catch (e) {
+      onError(message(e));
+    }
+  };
+  const applyVideo = async () => {
+    if (!selectedInstanceId) {
+      onError("Select an instance first.");
+      return;
+    }
+    setBusy(true);
+    setPerfNote(null);
+    try {
+      await command("apply_fps_video_settings", { id: selectedInstanceId });
+      setPerfNote(
+        "Patched options.txt: VSync off, Fast graphics, higher FPS cap.",
+      );
+    } catch (e) {
+      onError(message(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const installPerfMods = async () => {
+    if (!selectedInstanceId) {
+      onError("Select an instance first.");
+      return;
+    }
+    setBusy(true);
+    setPerfNote(null);
+    try {
+      const n = await command<number>("install_performance_mods", {
+        id: selectedInstanceId,
+      });
+      setPerfNote(`Installed ${n} performance mod(s) into this instance.`);
+    } catch (e) {
+      onError(message(e));
+    } finally {
+      setBusy(false);
+    }
   };
   return (
     <div className="settings-layout">
@@ -163,10 +217,66 @@ export function SettingsPanel({
             {section === "Performance" && (
               <>
                 <p>
-                  Memory limits are saved per instance. The default uses at most
-                  one third of system RAM, up to 4 GB.
+                  Memory is per instance. JVM presets and video tweaks apply to
+                  all launches; performance mods install into the selected
+                  instance
+                  {selectedInstanceId ? ` (${selectedInstanceId})` : ""}.
                 </p>
-                <Button onClick={onEdit}>Configure instance memory</Button>
+                <Button variant="outline" onClick={onEdit}>
+                  Configure instance memory
+                </Button>
+                <h3>JVM presets</h3>
+                <p>
+                  Safe GC tuning only. Save settings after choosing a preset.
+                </p>
+                <div className="row">
+                  <Button
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => void applyJvmPreset("default")}
+                  >
+                    Default
+                  </Button>
+                  <Button
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => void applyJvmPreset("balanced")}
+                  >
+                    Balanced
+                  </Button>
+                  <Button
+                    disabled={busy}
+                    onClick={() => void applyJvmPreset("high")}
+                  >
+                    High FPS
+                  </Button>
+                </div>
+                <h3>Minecraft options</h3>
+                <p>
+                  Turns off VSync, Fast graphics, fewer particles/shadows, FPS
+                  cap 260. Keeps your render distance and language.
+                </p>
+                <Button
+                  variant="outline"
+                  disabled={busy || !selectedInstanceId}
+                  onClick={() => void applyVideo()}
+                >
+                  Apply FPS video settings
+                </Button>
+                <h3>Performance mods</h3>
+                <p>
+                  Installs Sodium, Lithium, FerriteCore, ImmediatelyFast, and
+                  Entity Culling when your loader supports them (Fabric / Quilt
+                  / NeoForge). Forge gets the subset that has Forge builds.
+                  Vanilla needs a loader first.
+                </p>
+                <Button
+                  disabled={busy || !selectedInstanceId}
+                  onClick={() => void installPerfMods()}
+                >
+                  Install FPS mod pack
+                </Button>
+                {perfNote && <span className="verified">{perfNote}</span>}
               </>
             )}
             {section === "Appearance" && (
@@ -237,7 +347,13 @@ export function SettingsPanel({
                 <p>
                   Incorrect JVM arguments can prevent Minecraft from starting.
                   One argument per line. Supported: -XX:+UseG1GC, -XX:+UseZGC,
-                  -XX:+UseStringDeduplication, -XX:+AlwaysPreTouch.
+                  -XX:+UseStringDeduplication, -XX:+AlwaysPreTouch,
+                  -XX:+DisableExplicitGC, -XX:+ParallelRefProcEnabled,
+                  -XX:+PerfDisableSharedMem, -XX:MaxGCPauseMillis=50|200,
+                  -XX:MaxTenuringThreshold=1, -XX:G1NewSizePercent=30,
+                  -XX:G1MaxNewSizePercent=40, -XX:G1HeapRegionSize=8M,
+                  -XX:G1ReservePercent=20, -XX:InitiatingHeapOccupancyPercent=15.
+                  Prefer Settings → Performance presets.
                 </p>
                 <textarea
                   className="text-area"

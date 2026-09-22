@@ -565,6 +565,7 @@ export default function App() {
               onAccounts={() => setPage("Accounts")}
               onEdit={() => openEditor(selected)}
               initialSection={settingsSection}
+              selectedInstanceId={selected?.id ?? null}
             />
           )}
           {page === "Logs" && (

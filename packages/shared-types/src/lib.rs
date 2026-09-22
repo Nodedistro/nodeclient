@@ -124,19 +124,33 @@ impl Settings {
         }
         // Only explicitly safe tuning flags; classpath, agents, file outputs and replacement entrypoints are forbidden.
         for arg in &self.jvm_arguments {
-            if ![
-                "-XX:+UseG1GC",
-                "-XX:+UseZGC",
-                "-XX:+UseStringDeduplication",
-                "-XX:+AlwaysPreTouch",
-            ]
-            .contains(&arg.as_str())
-            {
+            if !crate_allowed_jvm(arg) {
                 bail!("Unsupported JVM argument: use one of the documented GC tuning flags.");
             }
         }
         Ok(())
     }
+}
+
+fn crate_allowed_jvm(arg: &str) -> bool {
+    [
+        "-XX:+UseG1GC",
+        "-XX:+UseZGC",
+        "-XX:+UseStringDeduplication",
+        "-XX:+AlwaysPreTouch",
+        "-XX:+DisableExplicitGC",
+        "-XX:+ParallelRefProcEnabled",
+        "-XX:+PerfDisableSharedMem",
+        "-XX:MaxGCPauseMillis=50",
+        "-XX:MaxGCPauseMillis=200",
+        "-XX:MaxTenuringThreshold=1",
+        "-XX:G1NewSizePercent=30",
+        "-XX:G1MaxNewSizePercent=40",
+        "-XX:G1HeapRegionSize=8M",
+        "-XX:G1ReservePercent=20",
+        "-XX:InitiatingHeapOccupancyPercent=15",
+    ]
+    .contains(&arg)
 }
 pub fn safe_id(value: &str) -> Result<()> {
     if value.is_empty()

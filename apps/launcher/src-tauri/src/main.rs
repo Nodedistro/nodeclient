@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod instance_content;
 mod modrinth;
+mod performance;
 mod troubleshoot;
 mod updater;
 use anyhow::{bail, Context, Result};
@@ -514,6 +515,109 @@ fn save_servers(
 async fn versions(state: tauri::State<'_, AppState>) -> CommandResult<nodeclient_core::Manifest> {
     let root = state.store.lock().unwrap().root.clone();
     nodeclient_core::manifest_cached(Some(&root)).await.map_err(error)
+}
+#[tauri::command]
+fn jvm_performance_preset(preset: String) -> CommandResult<Vec<String>> {
+    performance::jvm_preset(&preset).map_err(error)
+}
+#[tauri::command]
+fn apply_fps_video_settings(
+    state: tauri::State<AppState>,
+    id: String,
+) -> CommandResult<()> {
+    let root = state.store.lock().unwrap().root.clone();
+    performance::apply_fps_video_settings(&root, &id)
+        .map(|_| ())
+        .map_err(error)
+}
+#[tauri::command]
+async fn install_performance_mods(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    id: String,
+) -> CommandResult<u32> {
+    if !state
+        .busy
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_ok()
+    {
+        return Err("Another task is already running.".into());
+    }
+    state.cancel.store(false, Ordering::Relaxed);
+    let result = (async {
+        let (root, instance, concurrency) = {
+            let store = state.store.lock().unwrap();
+            (
+                store.root.clone(),
+                store.get(&id)?,
+                store.settings()?.concurrency,
+            )
+        };
+        let projects = performance::performance_mod_projects(&instance.loader.r#type)?;
+        let mods_dir =
+            nodeclient_types::safe_join(&root, &format!("instances/{id}/mods"))?;
+        std::fs::create_dir_all(&mods_dir)?;
+        let mut installed = 0u32;
+        let mut errors = vec![];
+        for project in projects {
+            status(
+                &app,
+                "DOWNLOADING",
+                &format!("Installing performance mod {project}"),
+                None,
+            );
+            match modrinth::latest_compatible_version(
+                project,
+                &instance.minecraft_version,
+                &instance.loader.r#type,
+            )
+            .await
+            {
+                Ok(file) => {
+                    let dest = mods_dir.join(&file.filename);
+                    let disabled = mods_dir.join(format!("{}.disabled", file.filename));
+                    if dest.is_file() || disabled.is_file() {
+                        installed += 1;
+                        continue;
+                    }
+                    match modrinth::install_file(
+                        &mods_dir,
+                        &file,
+                        concurrency,
+                        state.cancel.clone(),
+                        reporter(&app),
+                    )
+                    .await
+                    {
+                        Ok(_) => installed += 1,
+                        Err(e) => errors.push(format!("{project}: {e:#}")),
+                    }
+                }
+                Err(e) => errors.push(format!("{project}: {e:#}")),
+            }
+        }
+        if installed == 0 {
+            bail!(
+                "No performance mods could be installed. {}",
+                errors.join(" · ")
+            );
+        }
+        status(
+            &app,
+            "IDLE",
+            &format!("Installed {installed} performance mod(s)."),
+            None,
+        );
+        Ok(installed)
+    })
+    .await;
+    state.busy.store(false, Ordering::SeqCst);
+    if let Err(e) = &result {
+        let message = error(anyhow::anyhow!("{e:#}"));
+        log(&app, message.clone());
+        status(&app, "IDLE", &message, None);
+    }
+    result.map_err(error)
 }
 #[tauri::command]
 async fn fabric_loaders(
@@ -1172,6 +1276,9 @@ fn main() {
             save_servers,
             versions,
             fabric_loaders,
+            jvm_performance_preset,
+            apply_fps_video_settings,
+            install_performance_mods,
             loader_versions,
             java_runtimes,
             browse_java,
