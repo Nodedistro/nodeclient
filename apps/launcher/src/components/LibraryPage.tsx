@@ -3,9 +3,10 @@ import { BackupsPage } from "@/components/BackupsPage";
 import { InstancesPage } from "@/components/InstancesPage";
 import { ModsPage } from "@/components/ModsPage";
 import { ScreenshotsPage } from "@/components/ScreenshotsPage";
+import { WorldsPage } from "@/components/WorldsPage";
 import type { Instance } from "@/lib/models";
 
-const tabs = ["Instances", "Mods", "Screenshots", "Backups"] as const;
+const tabs = ["Instances", "Worlds", "Mods", "Screenshots", "Backups"] as const;
 export type LibraryTab = (typeof tabs)[number];
 
 export function LibraryPage({
@@ -67,6 +68,15 @@ export function LibraryPage({
           onRefresh={onRefresh}
           onAction={onAction}
           onRepair={onRepair}
+        />
+      )}
+      {tab === "Worlds" && (
+        <WorldsPage
+          instances={instances}
+          selectedId={selectedId}
+          desktop={desktop}
+          onAction={onAction}
+          onSelectInstance={onSelectInstance}
         />
       )}
       {tab === "Mods" && (

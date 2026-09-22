@@ -210,6 +210,26 @@ export function HomePage({
                 disabled={!desktop}
                 onClick={() =>
                   void onAction(async () => {
+                    const n = await command<number>("import_vanilla_worlds", {
+                      id: selected.id,
+                      names: null,
+                    });
+                    if (n === 0) {
+                      throw new Error(
+                        "No new worlds to import from AppData/.minecraft/saves (already imported, or none found).",
+                      );
+                    }
+                  })
+                }
+              >
+                Import .minecraft worlds
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={!desktop}
+                onClick={() =>
+                  void onAction(async () => {
                     await command("create_backup", { id: selected.id });
                   })
                 }

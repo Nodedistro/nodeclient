@@ -477,6 +477,14 @@ fn list_vanilla_worlds() -> CommandResult<Vec<instance_content::FileEntry>> {
     instance_content::list_vanilla_worlds().map_err(error)
 }
 #[tauri::command]
+fn list_instance_worlds(
+    state: tauri::State<AppState>,
+    id: String,
+) -> CommandResult<Vec<instance_content::FileEntry>> {
+    let root = state.store.lock().unwrap().root.clone();
+    instance_content::list_instance_worlds(&root, &id).map_err(error)
+}
+#[tauri::command]
 fn import_vanilla_worlds(
     state: tauri::State<AppState>,
     id: String,
@@ -845,6 +853,32 @@ async fn launch_body(
             .await?,
         )
     };
+    if !install_only {
+        match instance_content::ensure_vanilla_worlds_imported(root, id) {
+            Ok(n) if n > 0 => {
+                status(
+                    app,
+                    "DOWNLOADING",
+                    &format!(
+                        "Imported {n} world{} from AppData/.minecraft/saves",
+                        if n == 1 { "" } else { "s" }
+                    ),
+                    None,
+                );
+                log(
+                    app,
+                    format!(
+                        "Imported {n} world{} from %AppData%/.minecraft/saves into this instance.",
+                        if n == 1 { "" } else { "s" }
+                    ),
+                );
+            }
+            Ok(_) => {}
+            Err(e) => {
+                log(app, format!("Could not import AppData worlds: {e:#}"));
+            }
+        }
+    }
     let needs_installer = matches!(
         instance.loader.r#type.as_str(),
         "forge" | "neoforge"
@@ -1132,6 +1166,7 @@ fn main() {
             read_screenshot,
             open_instance_folder,
             list_vanilla_worlds,
+            list_instance_worlds,
             import_vanilla_worlds,
             list_servers,
             save_servers,

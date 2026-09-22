@@ -294,6 +294,33 @@ pub fn open_subdir(root: &Path, id: &str, folder: &str) -> Result<()> {
     Ok(())
 }
 
+pub fn list_instance_worlds(root: &Path, id: &str) -> Result<Vec<FileEntry>> {
+    let dir = instance_subdir(root, id, "saves")?;
+    let mut worlds = vec![];
+    if !dir.is_dir() {
+        return Ok(worlds);
+    }
+    for item in fs::read_dir(&dir)? {
+        let item = item?;
+        if !item.file_type()?.is_dir() {
+            continue;
+        }
+        let name = item.file_name().to_string_lossy().into_owned();
+        if safe_id(&name).is_err() {
+            continue;
+        }
+        let meta = item.metadata()?;
+        worlds.push(FileEntry {
+            name,
+            path: item.path().to_string_lossy().into_owned(),
+            size: meta.len(),
+            modified: modified_secs(&meta),
+        });
+    }
+    worlds.sort_by(|a, b| a.name.to_ascii_lowercase().cmp(&b.name.to_ascii_lowercase()));
+    Ok(worlds)
+}
+
 /// Official launcher game directory (`%APPDATA%/.minecraft` on Windows).
 pub fn vanilla_minecraft_dir() -> Result<PathBuf> {
     #[cfg(windows)]
@@ -323,6 +350,11 @@ pub fn list_vanilla_worlds() -> Result<Vec<FileEntry>> {
         if safe_id(&name).is_err() {
             continue;
         }
+        // Prefer folders that look like actual worlds.
+        if !item.path().join("level.dat").is_file() && !item.path().join("level.dat_old").is_file()
+        {
+            continue;
+        }
         let meta = item.metadata()?;
         worlds.push(FileEntry {
             name,
@@ -346,26 +378,32 @@ pub fn import_vanilla_worlds(root: &Path, id: &str, names: Option<Vec<String>>) 
     let wanted: Option<std::collections::HashSet<String>> =
         names.map(|list| list.into_iter().collect());
     let mut imported = 0u32;
-    for item in fs::read_dir(&source_root)? {
-        let item = item?;
-        if !item.file_type()?.is_dir() {
+    let available = list_vanilla_worlds()?;
+    for world in available {
+        if wanted.as_ref().is_some_and(|set| !set.contains(&world.name)) {
             continue;
         }
-        let name = item.file_name().to_string_lossy().into_owned();
-        if safe_id(&name).is_err() {
-            continue;
-        }
-        if wanted.as_ref().is_some_and(|set| !set.contains(&name)) {
-            continue;
-        }
-        let dest = safe_join(&dest_root, &name)?;
+        let dest = safe_join(&dest_root, &world.name)?;
         if dest.exists() {
             continue;
         }
-        copy_dir_recursive(&item.path(), &dest)?;
+        let source = PathBuf::from(&world.path);
+        copy_dir_recursive(&source, &dest)
+            .with_context(|| format!("Could not import world “{}”.", world.name))?;
         imported += 1;
     }
     Ok(imported)
+}
+
+/// Import AppData worlds when this instance has none yet.
+pub fn ensure_vanilla_worlds_imported(root: &Path, id: &str) -> Result<u32> {
+    if !list_instance_worlds(root, id)?.is_empty() {
+        return Ok(0);
+    }
+    if list_vanilla_worlds()?.is_empty() {
+        return Ok(0);
+    }
+    import_vanilla_worlds(root, id, None)
 }
 
 fn copy_dir_recursive(from: &Path, to: &Path) -> Result<()> {
@@ -377,8 +415,8 @@ fn copy_dir_recursive(from: &Path, to: &Path) -> Result<()> {
             .to_str()
             .context("Invalid world file name.")?
             .to_owned();
-        safe_id(&name)?;
-        let dest = safe_join(to, &name)?;
+        safe_world_entry_name(&name)?;
+        let dest = to.join(&name);
         let ty = item.file_type()?;
         if ty.is_symlink() {
             bail!("Symlinks inside world folders are not allowed.");
@@ -388,6 +426,25 @@ fn copy_dir_recursive(from: &Path, to: &Path) -> Result<()> {
         } else if ty.is_file() {
             fs::copy(item.path(), &dest)?;
         }
+    }
+    Ok(())
+}
+
+/// World folder contents use a wider charset than managed IDs (e.g. region files).
+fn safe_world_entry_name(value: &str) -> Result<()> {
+    if value.is_empty()
+        || value.len() > 200
+        || value == "."
+        || value == ".."
+        || value.contains('/')
+        || value.contains('\\')
+        || value.contains(':')
+        || value.contains('\0')
+    {
+        bail!("Unsafe world path entry.");
+    }
+    if !value.is_ascii() || value.bytes().any(|b| b < 0x20) {
+        bail!("Unsafe world path entry.");
     }
     Ok(())
 }
