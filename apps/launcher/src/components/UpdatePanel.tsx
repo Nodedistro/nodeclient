@@ -66,7 +66,7 @@ export function UpdatePanel({ onError }: { onError: (s: string) => void }) {
     try {
       const path = await command<string>("install_update", { info });
       setDone(
-        `Installer opened from ${path}. Finish setup, then relaunch NodeClient.`,
+        `Updating in place. NodeClient will restart when the installer finishes.`,
       );
     } catch (e) {
       onError(message(e));
@@ -83,7 +83,8 @@ export function UpdatePanel({ onError }: { onError: (s: string) => void }) {
           <p>
             Checks GitHub releases for{" "}
             <span className="mono">Nodedistro/nodeclient</span>. Downloads
-            require HTTPS and a published SHA-256 checksum.
+            require HTTPS and a published SHA-256 checksum. Updates install
+            in place — instances, worlds, and screenshots are kept.
           </p>
         </div>
         <Button
@@ -126,7 +127,7 @@ export function UpdatePanel({ onError }: { onError: (s: string) => void }) {
               <div className="row">
                 <Button disabled={installing} onClick={() => void install()}>
                   <ArrowDownToLine size={16} />
-                  {installing ? "Downloading…" : "Download and install"}
+                  {installing ? "Downloading…" : "Download and update"}
                 </Button>
                 {installing && (
                   <Button

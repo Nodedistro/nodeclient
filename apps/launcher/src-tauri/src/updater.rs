@@ -230,6 +230,12 @@ pub async fn download_and_launch(
     let tmp = path.with_extension("exe.partial");
     std::fs::write(&tmp, &bytes)?;
     std::fs::rename(&tmp, &path)?;
-    open::that(&path).context("Could not open the updater installer.")?;
+    // /UPDATE keeps AppData (instances, worlds, screenshots). /P is passive UI.
+    // /R relaunches NodeClient when the installer finishes.
+    std::process::Command::new(&path)
+        .args(["/UPDATE", "/P", "/R"])
+        .spawn()
+        .context("Could not start the updater installer.")?;
+    app.exit(0);
     Ok(path)
 }
