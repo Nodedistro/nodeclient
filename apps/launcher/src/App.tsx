@@ -23,10 +23,13 @@ import { HomePage } from "@/components/HomePage";
 import { InstanceEditor } from "@/components/InstanceEditor";
 import { InstancesPage } from "@/components/InstancesPage";
 import { LogsPage } from "@/components/LogsPage";
-import { PlaceholderPage } from "@/components/PlaceholderPage";
+import { ModsPage } from "@/components/ModsPage";
+import { ScreenshotsPage } from "@/components/ScreenshotsPage";
+import { ServersPage } from "@/components/ServersPage";
 import { SettingsPanel } from "@/components/SettingsPanel";
 import { SetupWizard } from "@/components/SetupWizard";
 import { VersionsPage } from "@/components/VersionsPage";
+import type { UpdateInfo } from "@/components/UpdatePanel";
 import { command, desktop, message } from "@/lib/api";
 import type {
   Instance,
@@ -84,6 +87,8 @@ export default function App() {
   const [logText, setLogText] = useState("");
   const [logFilter, setLogFilter] = useState("All");
   const [busy, setBusy] = useState(false);
+  const [update, setUpdate] = useState<UpdateInfo | null>(null);
+  const [settingsSection, setSettingsSection] = useState("General");
 
   const refresh = useCallback(async () => {
     if (desktop) setData(await command<Snapshot>("snapshot"));
@@ -104,6 +109,13 @@ export default function App() {
       .catch((e) => setError(message(e)))
       .finally(() => setLoading(false));
     void loadVersions();
+    if (desktop) {
+      void command<UpdateInfo>("check_for_updates")
+        .then(setUpdate)
+        .catch(() => {
+          // Offline or rate-limited; Settings > Updates can retry.
+        });
+    }
   }, [refresh, loadVersions]);
 
   useEffect(() => {
@@ -325,7 +337,10 @@ export default function App() {
             <button
               key={name}
               className={page === name ? "nav-item selected" : "nav-item"}
-              onClick={() => setPage(name)}
+              onClick={() => {
+                if (name === "Settings") setSettingsSection("General");
+                setPage(name);
+              }}
             >
               <Icon size={18} />
               {name}
@@ -374,6 +389,22 @@ export default function App() {
             </div>
           )}
           {notice}
+          {update?.available && (
+            <div className="update-banner">
+              <div>
+                <strong>NodeClient {update.latestVersion} is available</strong>
+                <p>You are on {update.currentVersion}.</p>
+              </div>
+              <Button
+                onClick={() => {
+                  setSettingsSection("Updates");
+                  setPage("Settings");
+                }}
+              >
+                View update
+              </Button>
+            </div>
+          )}
           {page === "Home" && (
             <HomePage
               data={data}
@@ -432,6 +463,33 @@ export default function App() {
               onAction={action}
             />
           )}
+          {page === "Mods" && (
+            <ModsPage
+              instances={data.instances}
+              selectedId={selected?.id}
+              desktop={desktop}
+              onAction={action}
+              onSelectInstance={chooseInstance}
+            />
+          )}
+          {page === "Servers" && (
+            <ServersPage
+              instances={data.instances}
+              selectedId={selected?.id}
+              desktop={desktop}
+              onAction={action}
+              onSelectInstance={chooseInstance}
+            />
+          )}
+          {page === "Screenshots" && (
+            <ScreenshotsPage
+              instances={data.instances}
+              selectedId={selected?.id}
+              desktop={desktop}
+              onAction={action}
+              onSelectInstance={chooseInstance}
+            />
+          )}
           {page === "Settings" && (
             <SettingsPanel
               settings={data.settings}
@@ -439,6 +497,7 @@ export default function App() {
               onError={setError}
               onAccounts={() => setPage("Accounts")}
               onEdit={() => openEditor(selected)}
+              initialSection={settingsSection}
             />
           )}
           {page === "Logs" && (
@@ -452,15 +511,6 @@ export default function App() {
               onLogFilter={setLogFilter}
               onSearch={setSearch}
               onRefresh={() => void fetchLogs()}
-              onAction={action}
-            />
-          )}
-          {(page === "Mods" ||
-            page === "Servers" ||
-            page === "Screenshots") && (
-            <PlaceholderPage
-              page={page}
-              selectedId={selected?.id}
               onAction={action}
             />
           )}
@@ -485,7 +535,10 @@ export default function App() {
                 : data.status.message}
           </span>
           <span className="status-version">
-            NODECLIENT <strong>0.1.0</strong>
+            {update?.available
+              ? `UPDATE ${update.latestVersion}`
+              : "NODECLIENT"}{" "}
+            <strong>0.1.1</strong>
           </span>
         </footer>
       </div>

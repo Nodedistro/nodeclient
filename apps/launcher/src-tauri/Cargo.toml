@@ -1,6 +1,6 @@
 [package]
 name = "nodeclient"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 
 [build-dependencies]
@@ -8,7 +8,7 @@ dotenvy = "0.15"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["protocol-asset"] }
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -25,3 +25,8 @@ dotenvy = "0.15"
 open = "5"
 rfd = "0.15"
 sysinfo = "0.33"
+fastnbt = "2.6.3"
+flate2 = "1.1.10"
+sha2 = "0.10"
+hex = "0.4"
+regex = "1"

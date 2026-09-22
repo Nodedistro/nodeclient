@@ -957,6 +957,37 @@ main {
   background: color-mix(in srgb, var(--card) 70%, transparent);
 }
 
+.update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--primary) 40%, var(--border));
+  background: color-mix(in srgb, var(--primary) 12%, var(--card));
+}
+
+.update-banner p {
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.update-notes {
+  max-height: 220px;
+  overflow: auto;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-deep);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 11px;
+  white-space: pre-wrap;
+  color: var(--muted-foreground);
+}
+
 .download-panel,
 .crash-notice {
   padding: 16px 18px;
@@ -998,6 +1029,78 @@ progress {
   border-radius: 10px;
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+.instance-picker {
+  height: 36px;
+  min-width: 160px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--foreground);
+  padding: 0 10px;
+  font: inherit;
+}
+
+.file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.file-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-top: 4px;
+}
+
+.file-row strong {
+  display: block;
+  font-size: 13px;
+}
+
+.file-row p {
+  margin-top: 2px;
+  font-size: 12px;
+}
+
+.shot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.shot-card {
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+}
+
+.shot-card img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  background: var(--surface-deep);
+}
+
+.shot-card figcaption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+
+.shot-card figcaption span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .app-loading {

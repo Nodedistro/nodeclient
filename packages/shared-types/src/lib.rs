@@ -131,9 +131,11 @@ pub fn safe_id(value: &str) -> Result<()> {
         || value == "."
         || value == ".."
         || value.ends_with('.')
+        || value.starts_with(' ')
+        || value.ends_with(' ')
         || !value
             .bytes()
-            .all(|c| c.is_ascii_alphanumeric() || b"._-".contains(&c))
+            .all(|c| c.is_ascii_alphanumeric() || b"._-+ ".contains(&c))
     {
         bail!("Unsafe identifier.");
     }
@@ -209,10 +211,18 @@ mod tests {
             "a/../b",
             "CON",
             "x:y",
+            "trailing.",
+            " leading",
+            "trailing ",
         ] {
             assert!(safe_join(Path::new("root"), x).is_err(), "{x}");
         }
         assert!(safe_join(Path::new("root"), "assets/ab/cdef").is_ok());
+        assert!(safe_join(
+            Path::new("root"),
+            "assets/virtual/pre-1.6/newsound/mob/ghast/affectionate scream.ogg"
+        )
+        .is_ok());
     }
     #[test]
     fn redact() {

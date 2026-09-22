@@ -1,4 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod instance_content;
+mod updater;
 use anyhow::{bail, Context, Result};
 use nodeclient_auth::{
     microsoft::{self, Pending},
@@ -30,6 +32,7 @@ struct AppState {
     pending: tokio::sync::Mutex<Option<Pending>>,
     busy: AtomicBool,
     cancel: Arc<AtomicBool>,
+    update_cancel: Arc<AtomicBool>,
     status: Mutex<Status>,
     logs: Mutex<Vec<String>>,
 }
@@ -196,6 +199,80 @@ fn open_instance(state: tauri::State<AppState>, id: String) -> CommandResult<()>
     .map_err(error)
 }
 #[tauri::command]
+fn list_mods(
+    state: tauri::State<AppState>,
+    id: String,
+) -> CommandResult<Vec<instance_content::FileEntry>> {
+    let root = state.store.lock().unwrap().root.clone();
+    instance_content::list_mods(&root, &id).map_err(error)
+}
+#[tauri::command]
+async fn add_mod(
+    state: tauri::State<'_, AppState>,
+    id: String,
+) -> CommandResult<Option<instance_content::FileEntry>> {
+    let file = rfd::AsyncFileDialog::new()
+        .set_title("Add mod (.jar or .zip)")
+        .add_filter("Mods", &["jar", "zip"])
+        .pick_file()
+        .await;
+    let Some(file) = file else {
+        return Ok(None);
+    };
+    let root = state.store.lock().unwrap().root.clone();
+    instance_content::add_mod(&root, &id, file.path())
+        .map(Some)
+        .map_err(error)
+}
+#[tauri::command]
+fn remove_mod(state: tauri::State<AppState>, id: String, name: String) -> CommandResult<()> {
+    let root = state.store.lock().unwrap().root.clone();
+    instance_content::remove_mod(&root, &id, &name).map_err(error)
+}
+#[tauri::command]
+fn list_screenshots(
+    state: tauri::State<AppState>,
+    id: String,
+) -> CommandResult<Vec<instance_content::FileEntry>> {
+    let root = state.store.lock().unwrap().root.clone();
+    instance_content::list_screenshots(&root, &id).map_err(error)
+}
+#[tauri::command]
+fn delete_screenshot(
+    state: tauri::State<AppState>,
+    id: String,
+    name: String,
+) -> CommandResult<()> {
+    let root = state.store.lock().unwrap().root.clone();
+    instance_content::delete_screenshot(&root, &id, &name).map_err(error)
+}
+#[tauri::command]
+fn open_instance_folder(
+    state: tauri::State<AppState>,
+    id: String,
+    folder: String,
+) -> CommandResult<()> {
+    let root = state.store.lock().unwrap().root.clone();
+    instance_content::open_subdir(&root, &id, &folder).map_err(error)
+}
+#[tauri::command]
+fn list_servers(
+    state: tauri::State<AppState>,
+    id: String,
+) -> CommandResult<Vec<instance_content::ServerEntry>> {
+    let root = state.store.lock().unwrap().root.clone();
+    instance_content::list_servers(&root, &id).map_err(error)
+}
+#[tauri::command]
+fn save_servers(
+    state: tauri::State<AppState>,
+    id: String,
+    servers: Vec<instance_content::ServerEntry>,
+) -> CommandResult<()> {
+    let root = state.store.lock().unwrap().root.clone();
+    instance_content::save_servers(&root, &id, &servers).map_err(error)
+}
+#[tauri::command]
 async fn versions(state: tauri::State<'_, AppState>) -> CommandResult<nodeclient_core::Manifest> {
     let root = state.store.lock().unwrap().root.clone();
     nodeclient_core::manifest_cached(Some(&root)).await.map_err(error)
@@ -340,6 +417,25 @@ fn remove_account(state: tauri::State<AppState>, id: String) -> CommandResult<()
 #[tauri::command]
 fn cancel_download(state: tauri::State<AppState>) {
     state.cancel.store(true, Ordering::Relaxed);
+}
+#[tauri::command]
+async fn check_for_updates() -> CommandResult<updater::UpdateInfo> {
+    updater::check().await.map_err(error)
+}
+#[tauri::command]
+async fn install_update(
+    app: tauri::AppHandle,
+    info: updater::UpdateInfo,
+) -> CommandResult<String> {
+    let cancel = app.state::<AppState>().update_cancel.clone();
+    updater::download_and_launch(&app, &info, cancel)
+        .await
+        .map(|path| path.to_string_lossy().into_owned())
+        .map_err(error)
+}
+#[tauri::command]
+fn cancel_update(state: tauri::State<AppState>) {
+    state.update_cancel.store(true, Ordering::Relaxed);
 }
 #[tauri::command]
 async fn launch(app: tauri::AppHandle, id: String, install_only: bool) -> CommandResult<()> {
@@ -571,6 +667,7 @@ fn main() {
                 pending: tokio::sync::Mutex::new(None),
                 busy: AtomicBool::new(false),
                 cancel: Arc::new(AtomicBool::new(false)),
+                update_cancel: Arc::new(AtomicBool::new(false)),
                 status: Mutex::new(Status {
                     phase: "IDLE".into(),
                     message: "Ready".into(),
@@ -598,6 +695,14 @@ fn main() {
             clone_instance,
             delete_instance,
             open_instance,
+            list_mods,
+            add_mod,
+            remove_mod,
+            list_screenshots,
+            delete_screenshot,
+            open_instance_folder,
+            list_servers,
+            save_servers,
             versions,
             java_runtimes,
             browse_java,
@@ -605,6 +710,9 @@ fn main() {
             cancel_login,
             remove_account,
             cancel_download,
+            check_for_updates,
+            install_update,
+            cancel_update,
             launch,
             read_logs
         ])

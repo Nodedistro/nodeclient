@@ -10,7 +10,7 @@
 - Deletion requires an explicit confirmation UI and a native confirmed argument.
 - The WebView CSP disallows remote scripts and only permits Minecraft texture images. There is no frontend shell or unrestricted filesystem plugin.
 - No telemetry or mandatory NodeClient backend.
-- Updates are not executed. Future updates must include version, channel, URL, checksum, signature, and release notes and verify a pinned signing key before installation. Stable/Beta/Developer channels remain a future feature.
+- Updates check `Nodedistro/nodeclient` GitHub Releases over HTTPS, require a SHA-256 checksum from the release digest or notes, download only from GitHub asset hosts, verify the hash before launch, and open the NSIS installer for the user to finish. Silent in-place replacement and unsigned updates are not supported.
 
 Limits: same-user malicious processes can race filesystem checks or inspect process memory/arguments; this is not an OS sandbox. Minecraft receives its token as required by its launch protocol. NodeClient redacts captured output and diagnostics, but cannot control every file produced internally by a third-party Java runtime/game. Do not publish raw crash dumps or process command lines.
 

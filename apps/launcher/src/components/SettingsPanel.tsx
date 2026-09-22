@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/select";
 import { command, message } from "@/lib/api";
 import type { Settings, Runtime } from "@/lib/models";
+import { UpdatePanel } from "./UpdatePanel";
 const sections = [
   "General",
   "Minecraft",
@@ -20,6 +21,7 @@ const sections = [
   "Performance",
   "Appearance",
   "Downloads",
+  "Updates",
   "Accounts",
   "Privacy",
   "Advanced",
@@ -31,18 +33,21 @@ export function SettingsPanel({
   onError,
   onAccounts,
   onEdit,
+  initialSection = "General",
 }: {
   settings: Settings;
   onSave: (s: Settings) => Promise<void>;
   onError: (s: string) => void;
   onAccounts: () => void;
   onEdit: () => void;
+  initialSection?: string;
 }) {
   const [draft, setDraft] = useState(settings);
-  const [section, setSection] = useState("General");
+  const [section, setSection] = useState(initialSection);
   const [runtimes, setRuntimes] = useState<Runtime[]>([]);
   const [saved, setSaved] = useState(false);
   useEffect(() => setDraft(settings), [settings]);
+  useEffect(() => setSection(initialSection), [initialSection]);
   const update = <K extends keyof Settings>(key: K, value: Settings[K]) => {
     setDraft({ ...draft, [key]: value });
     setSaved(false);
@@ -66,6 +71,7 @@ export function SettingsPanel({
             <CardTitle>{section}</CardTitle>
           </CardHeader>
           <CardContent className="stack">
+            {section === "Updates" && <UpdatePanel onError={onError} />}
             {section === "General" && (
               <>
                 <div className="setting-row">
@@ -249,7 +255,7 @@ export function SettingsPanel({
             {section === "About" && (
               <>
                 <h3>
-                  NodeClient <span className="mono">0.1.0</span>
+                  NodeClient <span className="mono">0.1.1</span>
                 </h3>
                 <p>An independent, original Minecraft Java Edition launcher.</p>
                 <p>

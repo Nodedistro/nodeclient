@@ -172,7 +172,7 @@ export function HomePage({
                       kind: "Minecraft",
                     });
                     await navigator.clipboard.writeText(
-                      `NodeClient 0.1.0\nMinecraft ${selected?.minecraftVersion}\nExit ${data.status.process?.exitCode}\n${text}`,
+                      `NodeClient 0.1.1\nMinecraft ${selected?.minecraftVersion}\nExit ${data.status.process?.exitCode}\n${text}`,
                     );
                   })
                 }
