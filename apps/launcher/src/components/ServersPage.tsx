@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Play, Plus, Server, Trash2 } from "lucide-react";
+import { Check, Copy, Play, Plus, Server, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -26,6 +26,7 @@ export function ServersPage({
   const [servers, setServers] = useState<ServerEntry[]>([]);
   const [name, setName] = useState("");
   const [ip, setIp] = useState("");
+  const [copied, setCopied] = useState<number | null>(null);
   const id = selectedId ?? instances[0]?.id;
 
   useEffect(() => {
@@ -141,6 +142,19 @@ export function ServersPage({
                 >
                   <Play size={16} />
                   Play
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={`Copy address for ${server.name}`}
+                  onClick={() => {
+                    void navigator.clipboard.writeText(server.ip).then(() => {
+                      setCopied(index);
+                      window.setTimeout(() => setCopied(null), 1500);
+                    });
+                  }}
+                >
+                  {copied === index ? <Check size={16} /> : <Copy size={16} />}
                 </Button>
                 <Button
                   variant="ghost"
