@@ -462,13 +462,19 @@ pub fn list_servers(root: &Path, id: &str) -> Result<Vec<ServerEntry>> {
         return Ok(vec![]);
     }
     let bytes = fs::read(&path)?;
-    let mut decoder = flate2::read::GzDecoder::new(bytes.as_slice());
-    let mut raw = Vec::new();
-    decoder
-        .read_to_end(&mut raw)
-        .context("servers.dat is not valid gzip NBT.")?;
-    let root_nbt: ServersRoot =
-        fastnbt::from_bytes(&raw).context("Could not parse Minecraft servers.dat.")?;
+    let root_nbt: ServersRoot = match fastnbt::from_bytes(&bytes) {
+        Ok(value) => value,
+        Err(raw_error) => {
+            let mut decoder = flate2::read::GzDecoder::new(bytes.as_slice());
+            let mut raw = Vec::new();
+            decoder
+                .read_to_end(&mut raw)
+                .context("servers.dat is not valid raw or gzip NBT.")?;
+            fastnbt::from_bytes(&raw).with_context(|| {
+                format!("Could not parse Minecraft servers.dat as NBT: {raw_error}")
+            })?
+        }
+    };
     Ok(root_nbt
         .servers
         .into_iter()
@@ -508,12 +514,8 @@ pub fn save_servers(root: &Path, id: &str, servers: &[ServerEntry]) -> Result<()
     };
     let nbt = fastnbt::to_bytes(&root_nbt)?;
     let path = servers_path(root, id)?;
-    let mut encoder =
-        flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-    encoder.write_all(&nbt)?;
-    let gzipped = encoder.finish()?;
     let tmp = path.with_extension("dat.tmp");
-    fs::write(&tmp, gzipped)?;
+    fs::write(&tmp, nbt)?;
     fs::rename(tmp, path)?;
     Ok(())
 }

@@ -10,7 +10,7 @@ Arguments are separate Rust strings passed directly to java with Command::args, 
 
 The application serializes active installation/launch work, tracks process ID and timing, reads stdout/stderr, and updates playtime on exit. Nonzero exit codes produce the crash notice. Installation is verified again before every launch.
 
-The Servers page stores the instance's official `servers.dat` and its Play action launches Java with separate `--server` and `--port` arguments. Hostnames, IPv6 literals, and ports are validated in Rust; addresses are never concatenated into a shell command.
+The Servers page stores the instance's official raw-NBT `servers.dat` and its Play action uses Minecraft Quick Play on modern versions, with `--server` and `--port` fallback for older versions. Hostnames, IPv6 literals, and ports are validated in Rust; addresses are never concatenated into a shell command.
 
 Instances now carry an explicit `java` or `bedrock` edition. On Windows, a Bedrock instance can open the official Minecraft for Windows Microsoft Store listing, and its Play action opens the installed app through the registered `minecraft://` URI. Microsoft handles the Store installation, account, updates, and entitlement checks. NodeClient does not download or redistribute Bedrock binaries. Direct Bedrock server joining is left to the official app because its deep-link contract is not a supported public launcher API.
 
