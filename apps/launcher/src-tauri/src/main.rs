@@ -1141,8 +1141,10 @@ async fn launch_body(
                 name: host.clone(),
                 ip: address,
             });
-            instance_content::save_servers(root, id, &saved)?;
         }
+        // Rewrite even an existing entry so legacy gzip-NBT files are migrated
+        // to the raw NBT format expected by current Minecraft versions.
+        instance_content::save_servers(root, id, &saved)?;
     }
     let args = nodeclient_core::arguments::construct(
         &version,
