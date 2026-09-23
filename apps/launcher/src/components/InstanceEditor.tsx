@@ -58,6 +58,7 @@ export function InstanceEditor({
   onError: (s: string) => void;
 }) {
   const [name, setName] = useState("");
+  const [edition, setEdition] = useState<"java" | "bedrock">("java");
   const [version, setVersion] = useState("");
   const [loaderType, setLoaderType] = useState<LoaderType>("vanilla");
   const [loaderVersion, setLoaderVersion] = useState("");
@@ -70,6 +71,7 @@ export function InstanceEditor({
   useEffect(() => {
     if (open) {
       setName(instance?.name ?? "My world");
+      setEdition(instance?.edition ?? "java");
       setVersion(
         instance?.minecraftVersion ??
           preferredVersion ??
@@ -133,6 +135,7 @@ export function InstanceEditor({
       const item = instanceSchema.parse({
         id: instance?.id ?? crypto.randomUUID(),
         name,
+        edition,
         minecraftVersion: version,
         loader:
           loaderType === "vanilla"
@@ -188,6 +191,12 @@ export function InstanceEditor({
             maxLength={100}
           />
           <Label>Minecraft version</Label>
+          <Label>Edition</Label>
+          <div className="row" style={{ flexWrap: "wrap", gap: 8 }}>
+            <Button variant={edition === "java" ? "secondary" : "outline"} onClick={() => setEdition("java")}>Java Edition</Button>
+            <Button variant={edition === "bedrock" ? "secondary" : "outline"} onClick={() => { setEdition("bedrock"); setLoaderType("vanilla"); }}>Bedrock Edition</Button>
+          </div>
+          {edition === "bedrock" && <p>Bedrock instances are saved now; Microsoft’s Bedrock runtime and launch integration are still being added.</p>}
           <Select value={version} onValueChange={setVersion}>
             <SelectTrigger>
               <SelectValue placeholder="Choose a version" />

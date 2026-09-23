@@ -217,7 +217,7 @@ export default function App() {
     }
   };
 
-  async function play(opts?: { safeMode?: boolean }) {
+  async function play(opts?: { safeMode?: boolean; server?: string }) {
     if (!selected) {
       openEditor();
       return;
@@ -234,6 +234,7 @@ export default function App() {
         id: selected.id,
         installOnly,
         safeMode: opts?.safeMode ?? false,
+        server: opts?.server,
       });
       await refresh();
     } catch (e) {
@@ -548,6 +549,7 @@ export default function App() {
               desktop={desktop}
               onAction={action}
               onSelectInstance={chooseInstance}
+              onLaunch={(address) => play({ server: address })}
             />
           )}
           {page === "Downloads" && (

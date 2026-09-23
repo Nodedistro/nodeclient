@@ -44,6 +44,7 @@ pub fn construct(
     profile: &Profile,
     access_token: &str,
     client_id: &str,
+    server: Option<(&str, u16)>,
 ) -> Result<Vec<String>> {
     instance.validate()?;
     settings.validate()?;
@@ -149,6 +150,9 @@ pub fn construct(
     if settings.fullscreen {
         args.push("--fullscreen".into());
     }
+    if let Some((host, port)) = server {
+        args.extend(["--server".into(), host.into(), "--port".into(), port.to_string()]);
+    }
     Ok(args)
 }
 #[cfg(test)]
@@ -194,6 +198,7 @@ mod security_regressions {
             &profile,
             "test-only-token",
             "test-app-id",
+            None,
         )
         .unwrap();
         let token = args.iter().position(|s| s == "--accessToken").unwrap();
@@ -204,5 +209,22 @@ mod security_regressions {
             !nodeclient_types::redact_secrets(&args.join(" "), &["test-only-token".into()])
                 .contains("test-only-token")
         );
+    }
+
+    #[test]
+    fn server_target_is_separate_arguments() {
+        let version = serde_json::json!({"type":"release","mainClass":"net.minecraft.client.main.Main","arguments":{"jvm":[],"game":[]}});
+        let installation = Installation {
+            classpath: vec![std::path::PathBuf::from("client.jar")],
+            natives: "natives".into(),
+            asset_index: "test".into(),
+            assets: "assets".into(),
+            game_assets: "assets".into(),
+            logging: None,
+        };
+        let instance: Instance = serde_json::from_value(serde_json::json!({"id":"test","name":"Test","minecraftVersion":"test","loader":{"type":"vanilla"},"java":{"mode":"automatic","path":null},"memory":{"minimumMb":1024,"maximumMb":2048}})).unwrap();
+        let args = construct(&version, &installation, Path::new("game"), &instance, &Settings::default(), &Profile { id: "id".into(), name: "name".into(), ..Default::default() }, "token", "client", Some(("play.example.com", 25565))).unwrap();
+        assert!(args.windows(2).any(|w| w == ["--server", "play.example.com"]));
+        assert!(args.windows(2).any(|w| w == ["--port", "25565"]));
     }
 }

@@ -7,6 +7,8 @@ use std::path::{Component, Path, PathBuf};
 pub struct Instance {
     pub id: String,
     pub name: String,
+    #[serde(default = "default_edition")]
+    pub edition: String,
     pub minecraft_version: String,
     pub loader: Loader,
     pub java: Java,
@@ -16,6 +18,7 @@ pub struct Instance {
     #[serde(default)]
     pub playtime_seconds: u64,
 }
+fn default_edition() -> String { "java".into() }
 #[derive(Clone, Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct Loader {
@@ -41,6 +44,9 @@ impl Instance {
         safe_id(&self.minecraft_version)?;
         if self.name.trim().is_empty() || self.name.len() > 100 {
             bail!("Instance name must contain 1–100 characters.");
+        }
+        if !["java", "bedrock"].contains(&self.edition.as_str()) {
+            bail!("Unsupported Minecraft edition.");
         }
         match self.loader.r#type.as_str() {
             "vanilla" => {}

@@ -65,6 +65,27 @@ fn config() -> microsoft::Config {
             .unwrap_or_else(|| microsoft::DEFAULT_REDIRECT.into()),
     }
 }
+fn parse_server_target(value: &str) -> Result<(String, u16)> {
+    let value = value.trim();
+    if value.is_empty() || value.len() > 253 || value.chars().any(|c| c.is_control() || c.is_whitespace()) {
+        bail!("Enter a valid Minecraft server address.");
+    }
+    let (host, port) = if let Some(rest) = value.strip_prefix('[') {
+        let (host, rest) = rest.split_once(']').context("Invalid bracketed server address.")?;
+        let port = rest.strip_prefix(':').unwrap_or("25565");
+        (host, port)
+    } else if let Some((host, port)) = value.rsplit_once(':') {
+        if host.contains(':') { (value, "25565") } else { (host, port) }
+    } else {
+        (value, "25565")
+    };
+    if host.is_empty() || host.len() > 253 || host.contains('/') || host.contains('\\') || host.contains('@') {
+        bail!("Enter a valid Minecraft server hostname.");
+    }
+    let port = port.parse::<u16>().context("Server port must be between 1 and 65535.")?;
+    if port == 0 { bail!("Server port must be between 1 and 65535."); }
+    Ok((host.to_owned(), port))
+}
 fn status(
     app: &tauri::AppHandle,
     phase: &str,
@@ -836,6 +857,7 @@ async fn launch(
     id: String,
     install_only: bool,
     safe_mode: Option<bool>,
+    server: Option<String>,
 ) -> CommandResult<()> {
     let state = app.state::<AppState>();
     if state
@@ -846,7 +868,8 @@ async fn launch(
         return Err("Minecraft or an installation is already running.".into());
     }
     state.cancel.store(false, Ordering::Relaxed);
-    let result = launch_inner(&app, &id, install_only, safe_mode.unwrap_or(false)).await;
+    let target = server.as_deref().map(parse_server_target).transpose().map_err(error)?;
+    let result = launch_inner(&app, &id, install_only, safe_mode.unwrap_or(false), target).await;
     state.busy.store(false, Ordering::SeqCst);
     if let Err(e) = &result {
         let message = error(anyhow::anyhow!("{e:#}"));
@@ -873,7 +896,7 @@ async fn repair_instance(app: tauri::AppHandle, id: String) -> CommandResult<()>
         };
         troubleshoot::clear_install_marker(&game)?;
         status(&app, "DOWNLOADING", "Repairing instance files", None);
-        launch_inner(&app, &id, true, false).await
+        launch_inner(&app, &id, true, false, None).await
     })
     .await;
     state.busy.store(false, Ordering::SeqCst);
@@ -889,6 +912,7 @@ async fn launch_inner(
     id: &str,
     install_only: bool,
     safe_mode: bool,
+    server: Option<(String, u16)>,
 ) -> Result<()> {
     let state = app.state::<AppState>();
     let (root, game, instance, settings) = {
@@ -911,7 +935,7 @@ async fn launch_inner(
     } else {
         vec![]
     };
-    let launch_result = launch_body(app, &root, &game, &instance, &settings, id, install_only).await;
+    let launch_result = launch_body(app, &root, &game, &instance, &settings, id, install_only, server).await;
     if !disabled_mods.is_empty() {
         let _ = troubleshoot::restore_mods(&root, id, &disabled_mods);
         if launch_result.is_ok() {
@@ -935,7 +959,11 @@ async fn launch_body(
     settings: &Settings,
     id: &str,
     install_only: bool,
+    server: Option<(String, u16)>,
 ) -> Result<()> {
+    if instance.edition == "bedrock" {
+        bail!("Bedrock Edition instances are saved, but Bedrock launch support is not available yet. Java Edition uses the verified launcher flow today.");
+    }
     let state = app.state::<AppState>();
     let session = if install_only {
         None
@@ -1077,6 +1105,7 @@ async fn launch_body(
         &session.profile,
         &session.access_token,
         &config().client_id,
+        server.as_ref().map(|(host, port)| (host.as_str(), *port)),
     )?;
     status(app, "LAUNCHING", "Starting Minecraft", None);
     let started_app = app.clone();

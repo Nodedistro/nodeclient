@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, Server, Trash2 } from "lucide-react";
+import { Play, Plus, Server, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -14,12 +14,14 @@ export function ServersPage({
   desktop,
   onAction,
   onSelectInstance,
+  onLaunch,
 }: {
   instances: Instance[];
   selectedId?: string;
   desktop: boolean;
   onAction: (task: () => Promise<unknown>) => Promise<void>;
   onSelectInstance: (id: string) => void;
+  onLaunch: (address: string) => Promise<void>;
 }) {
   const [servers, setServers] = useState<ServerEntry[]>([]);
   const [name, setName] = useState("");
@@ -133,6 +135,13 @@ export function ServersPage({
                   <strong>{server.name}</strong>
                   <p className="mono">{server.ip}</p>
                 </div>
+                <Button
+                  variant="outline"
+                  onClick={() => void onLaunch(server.ip)}
+                >
+                  <Play size={16} />
+                  Play
+                </Button>
                 <Button
                   variant="ghost"
                   size="icon"
