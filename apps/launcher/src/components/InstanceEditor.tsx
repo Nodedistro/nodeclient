@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -213,11 +214,24 @@ export function InstanceEditor({
             </Button>
           </div>
           {edition === "bedrock" ? (
-            <p>
-              NodeClient opens the official Minecraft for Windows app through
-              Microsoft’s registered Minecraft URI. The app handles its own
-              Store installation and sign-in.
-            </p>
+            <div className="stack">
+              <p>
+                NodeClient opens the official Minecraft for Windows app through
+                Microsoft’s registered Minecraft URI. Microsoft handles Store
+                installation, licensing, updates, and sign-in.
+              </p>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  void command("open_bedrock_store").catch((e) =>
+                    onError(message(e)),
+                  );
+                }}
+              >
+                <ExternalLink size={16} />
+                Install from Microsoft Store
+              </Button>
+            </div>
           ) : (
             <>
               <Label>Minecraft version</Label>

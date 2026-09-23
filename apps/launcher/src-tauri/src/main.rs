@@ -897,6 +897,21 @@ fn launch_bedrock(app: tauri::AppHandle) -> CommandResult<()> {
     }
 }
 #[tauri::command]
+fn open_bedrock_store() -> CommandResult<()> {
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer.exe")
+            .arg("ms-windows-store://pdp/?productid=9NBLGGH2JHXJ")
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| format!("Microsoft Store could not be opened: {e}"))
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Err("Microsoft Store installation is currently available on Windows only.".into())
+    }
+}
+#[tauri::command]
 async fn repair_instance(app: tauri::AppHandle, id: String) -> CommandResult<()> {
     let state = app.state::<AppState>();
     if state
@@ -1338,6 +1353,7 @@ fn main() {
             cancel_update,
             launch,
             launch_bedrock,
+            open_bedrock_store,
             repair_instance,
             explain_crash,
             list_backups,
