@@ -102,6 +102,7 @@ pub fn construct(
         ("resolution_height", settings.height.to_string()),
         ("clientid", client_id.into()),
         ("auth_xuid", String::new()),
+        ("quickPlayMultiplayer", String::new()),
     ] {
         vars.insert(key.into(), value);
     }
@@ -151,7 +152,14 @@ pub fn construct(
         args.push("--fullscreen".into());
     }
     if let Some((host, port)) = server {
-        args.extend(["--server".into(), host.into(), "--port".into(), port.to_string()]);
+        let supports_quick_play = version["arguments"]["game"]
+            .to_string()
+            .contains("quickPlayMultiplayer");
+        if supports_quick_play {
+            args.extend(["--quickPlayMultiplayer".into(), format!("{host}:{port}")]);
+        } else {
+            args.extend(["--server".into(), host.into(), "--port".into(), port.to_string()]);
+        }
     }
     Ok(args)
 }
@@ -226,5 +234,15 @@ mod security_regressions {
         let args = construct(&version, &installation, Path::new("game"), &instance, &Settings::default(), &Profile { id: "id".into(), name: "name".into(), ..Default::default() }, "token", "client", Some(("play.example.com", 25565))).unwrap();
         assert!(args.windows(2).any(|w| w == ["--server", "play.example.com"]));
         assert!(args.windows(2).any(|w| w == ["--port", "25565"]));
+    }
+
+    #[test]
+    fn modern_server_target_uses_quick_play() {
+        let version = serde_json::json!({"type":"release","mainClass":"net.minecraft.client.main.Main","arguments":{"jvm":[],"game":["--quickPlayMultiplayer","${quickPlayMultiplayer}"]}});
+        let installation = Installation { classpath: vec!["client.jar".into()], natives: "natives".into(), asset_index: "test".into(), assets: "assets".into(), game_assets: "assets".into(), logging: None };
+        let instance: Instance = serde_json::from_value(serde_json::json!({"id":"test","name":"Test","minecraftVersion":"test","loader":{"type":"vanilla"},"java":{"mode":"automatic","path":null},"memory":{"minimumMb":1024,"maximumMb":2048}})).unwrap();
+        let args = construct(&version, &installation, Path::new("game"), &instance, &Settings::default(), &Profile { id: "id".into(), name: "name".into(), ..Default::default() }, "token", "client", Some(("play.example.com", 25565))).unwrap();
+        assert!(args.windows(2).any(|w| w == ["--quickPlayMultiplayer", "play.example.com:25565"]));
+        assert!(!args.iter().any(|arg| arg == "--server"));
     }
 }

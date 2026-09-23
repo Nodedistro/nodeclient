@@ -1129,6 +1129,21 @@ async fn launch_body(
         bail!("Launch cancelled.");
     }
     let session = session.context("Authenticated session missing")?;
+    if let Some((host, port)) = &server {
+        let address = if host.contains(':') {
+            format!("[{host}]:{port}")
+        } else {
+            format!("{host}:{port}")
+        };
+        let mut saved = instance_content::list_servers(root, id).unwrap_or_default();
+        if !saved.iter().any(|item| item.ip.eq_ignore_ascii_case(&address)) {
+            saved.push(instance_content::ServerEntry {
+                name: host.clone(),
+                ip: address,
+            });
+            instance_content::save_servers(root, id, &saved)?;
+        }
+    }
     let args = nodeclient_core::arguments::construct(
         &version,
         &installation,
