@@ -12,6 +12,6 @@ The application serializes active installation/launch work, tracks process ID an
 
 The Servers page stores the instance's official `servers.dat` and its Play action launches Java with separate `--server` and `--port` arguments. Hostnames, IPv6 literals, and ports are validated in Rust; addresses are never concatenated into a shell command.
 
-Instances now carry an explicit `java` or `bedrock` edition. Bedrock instances can be created and stored so the UI and metadata are ready for the separate Bedrock runtime, but launching Bedrock is deliberately blocked until an official, user-owned Bedrock client/runtime integration is implemented. NodeClient does not download or redistribute Bedrock binaries.
+Instances now carry an explicit `java` or `bedrock` edition. On Windows, a Bedrock Play action opens the official Minecraft for Windows app through the registered `minecraft://` URI; Microsoft handles the Store installation, account, and entitlement checks. NodeClient does not download or redistribute Bedrock binaries. Direct Bedrock server joining is left to the official app because its deep-link contract is not a supported public launcher API.
 
 Scope: Vanilla only. Legacy versions appear in the official list but have not all been compatibility-tested; unusual unsafe historical identifiers or unsupported metadata fail explicitly. No claim of all-version support is made.

@@ -196,7 +196,7 @@ export function InstanceEditor({
             <Button variant={edition === "java" ? "secondary" : "outline"} onClick={() => setEdition("java")}>Java Edition</Button>
             <Button variant={edition === "bedrock" ? "secondary" : "outline"} onClick={() => { setEdition("bedrock"); setLoaderType("vanilla"); }}>Bedrock Edition</Button>
           </div>
-          {edition === "bedrock" && <p>Bedrock instances are saved now; Microsoft’s Bedrock runtime and launch integration are still being added.</p>}
+          {edition === "bedrock" && <p>NodeClient opens the official Minecraft for Windows app through Microsoft’s registered Minecraft URI. The app handles its own Store installation and sign-in.</p>}
           <Select value={version} onValueChange={setVersion}>
             <SelectTrigger>
               <SelectValue placeholder="Choose a version" />

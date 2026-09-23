@@ -879,6 +879,24 @@ async fn launch(
     result.map_err(error)
 }
 #[tauri::command]
+fn launch_bedrock(app: tauri::AppHandle) -> CommandResult<()> {
+    #[cfg(target_os = "windows")]
+    {
+        status(&app, "LAUNCHING", "Opening Minecraft for Windows", None);
+        std::process::Command::new("explorer.exe")
+            .arg("minecraft://")
+            .spawn()
+            .map_err(|e| format!("Minecraft for Windows could not be opened: {e}"))?;
+        status(&app, "IDLE", "Minecraft for Windows opened.", None);
+        Ok(())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = app;
+        Err("Bedrock launch integration is currently available on Windows only.".into())
+    }
+}
+#[tauri::command]
 async fn repair_instance(app: tauri::AppHandle, id: String) -> CommandResult<()> {
     let state = app.state::<AppState>();
     if state
@@ -1319,6 +1337,7 @@ fn main() {
             install_update,
             cancel_update,
             launch,
+            launch_bedrock,
             repair_instance,
             explain_crash,
             list_backups,
