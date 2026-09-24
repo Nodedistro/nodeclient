@@ -1,5 +1,7 @@
 # NodeClient
 
+NodeClient is owned by Nodedistro.
+
 An original desktop launcher for Minecraft Java Edition, built with Tauri 2, Rust, React, TypeScript, Vite, Tailwind CSS, and shadcn/ui. No launcher backend, telemetry, offline accounts, or bundled Minecraft files.
 
 The first milestone is Vanilla: Microsoft sign-in → ownership/profile → official version selection → verified installation → compatible Java → real Minecraft process. Fabric, mods, server management, screenshot gallery, and updates are deliberately deferred until that full flow has been verified.

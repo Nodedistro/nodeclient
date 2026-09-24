@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { APP_VERSION } from "@/lib/version";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -371,9 +372,10 @@ export function SettingsPanel({
             {section === "About" && (
               <>
                 <h3>
-                  NodeClient <span className="mono">0.1.1</span>
+                  NodeClient <span className="mono">{APP_VERSION}</span>
                 </h3>
                 <p>An independent, original Minecraft Java Edition launcher.</p>
+                <p>NodeClient is owned by Nodedistro.</p>
                 <p>
                   Not an official Minecraft product. Not approved by or
                   associated with Mojang or Microsoft.

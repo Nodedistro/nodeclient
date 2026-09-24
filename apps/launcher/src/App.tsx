@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { APP_VERSION } from "@/lib/version";
 import { listen } from "@tauri-apps/api/event";
 import {
   ArrowDownToLine,
@@ -618,7 +619,7 @@ export default function App() {
             {update?.available
               ? `UPDATE ${update.latestVersion}`
               : "NODECLIENT"}{" "}
-            <strong>0.1.5</strong>
+            <strong>{APP_VERSION}</strong>
           </span>
         </footer>
       </div>

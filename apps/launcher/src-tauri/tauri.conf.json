@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "NodeClient",
-  "version": "0.1.19",
+  "version": "0.1.20",
   "identifier": "app.nodeclient.launcher",
   "build": {
     "beforeDevCommand": "pnpm dev",
@@ -41,6 +41,8 @@
   },
   "bundle": {
     "active": true,
+    "publisher": "Nodedistro",
+    "copyright": "Copyright © 2026 Nodedistro",
     "targets": ["nsis"],
     "icon": ["icons/icon.ico"],
     "windows": {
