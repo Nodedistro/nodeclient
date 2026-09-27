@@ -12,6 +12,6 @@ The application serializes active installation/launch work, tracks process ID an
 
 The Servers page stores the instance's official raw-NBT `servers.dat` and its Play action uses Minecraft Quick Play on modern versions, with `--server` and `--port` fallback for older versions. Hostnames, IPv6 literals, and ports are validated in Rust; addresses are never concatenated into a shell command.
 
-Instances now carry an explicit `java` or `bedrock` edition. On Windows, a Bedrock instance can open the official Minecraft for Windows Microsoft Store listing, and its Play action opens the installed app through the registered `minecraft://` URI. Microsoft handles the Store installation, account, updates, and entitlement checks. NodeClient does not download or redistribute Bedrock binaries. Direct Bedrock server joining is left to the official app because its deep-link contract is not a supported public launcher API.
+NodeClient supports Minecraft Java Edition only. Unsupported legacy instance entries are omitted from the launcher while their files remain on disk.
 
 Scope: Vanilla only. Legacy versions appear in the official list but have not all been compatibility-tested; unusual unsafe historical identifiers or unsupported metadata fail explicitly. No claim of all-version support is made.

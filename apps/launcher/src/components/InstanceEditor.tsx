@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -59,7 +58,6 @@ export function InstanceEditor({
   onError: (s: string) => void;
 }) {
   const [name, setName] = useState("");
-  const [edition, setEdition] = useState<"java" | "bedrock">("java");
   const [version, setVersion] = useState("");
   const [loaderType, setLoaderType] = useState<LoaderType>("vanilla");
   const [loaderVersion, setLoaderVersion] = useState("");
@@ -72,7 +70,6 @@ export function InstanceEditor({
   useEffect(() => {
     if (open) {
       setName(instance?.name ?? "My world");
-      setEdition(instance?.edition ?? "java");
       setVersion(
         instance?.minecraftVersion ??
           preferredVersion ??
@@ -136,8 +133,8 @@ export function InstanceEditor({
       const item = instanceSchema.parse({
         id: instance?.id ?? crypto.randomUUID(),
         name,
-        edition,
-        minecraftVersion: edition === "bedrock" ? "bedrock" : version,
+        edition: "java",
+        minecraftVersion: version,
         loader:
           loaderType === "vanilla"
             ? { type: "vanilla", version: null }
@@ -191,164 +188,116 @@ export function InstanceEditor({
             onChange={(e) => setName(e.target.value)}
             maxLength={100}
           />
-          <Label>Edition</Label>
+          <Label>Minecraft version</Label>
+          <Select value={version} onValueChange={setVersion}>
+            <SelectTrigger>
+              <SelectValue placeholder="Choose a version" />
+            </SelectTrigger>
+            <SelectContent>
+              {manifest?.versions
+                .filter((v) => ["release", "snapshot"].includes(v.type))
+                .map((v) => (
+                  <SelectItem key={v.id} value={v.id}>
+                    {v.id} · {v.type}
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
+          <Label>Loader</Label>
           <div className="row" style={{ flexWrap: "wrap", gap: 8 }}>
-            <Button
-              variant={edition === "java" ? "secondary" : "outline"}
-              onClick={() => {
-                setEdition("java");
-                if (version === "bedrock") setVersion(manifest?.latest.release ?? "");
-              }}
-            >
-              Java Edition
-            </Button>
-            <Button
-              variant={edition === "bedrock" ? "secondary" : "outline"}
-              onClick={() => {
-                setEdition("bedrock");
-                setVersion("bedrock");
-                setLoaderType("vanilla");
-              }}
-            >
-              Bedrock Edition
-            </Button>
-          </div>
-          {edition === "bedrock" ? (
-            <div className="stack">
-              <p>
-                NodeClient opens the official Minecraft for Windows app through
-                Microsoft’s registered Minecraft URI. Microsoft handles Store
-                installation, licensing, updates, and sign-in.
-              </p>
+            {LOADER_OPTIONS.map((opt) => (
               <Button
-                variant="outline"
-                onClick={() => {
-                  void command("open_bedrock_store").catch((e) =>
-                    onError(message(e)),
-                  );
-                }}
+                key={opt.type}
+                variant={loaderType === opt.type ? "secondary" : "outline"}
+                onClick={() => setLoaderType(opt.type)}
               >
-                <ExternalLink size={16} />
-                Install from Microsoft Store
+                {opt.label}
               </Button>
-            </div>
-          ) : (
+            ))}
+          </div>
+          {loaderType !== "vanilla" && (
             <>
-              <Label>Minecraft version</Label>
-              <Select value={version} onValueChange={setVersion}>
+              <Label>{loaderName} version</Label>
+              <Select
+                value={loaderVersion}
+                onValueChange={setLoaderVersion}
+                disabled={loadingLoaders || !loaderVersions.length}
+              >
                 <SelectTrigger>
-                  <SelectValue placeholder="Choose a version" />
+                  <SelectValue
+                    placeholder={
+                      loadingLoaders
+                        ? `Loading ${loaderName} versions…`
+                        : `Choose ${loaderName} version`
+                    }
+                  />
                 </SelectTrigger>
                 <SelectContent>
-                  {manifest?.versions
-                    .filter((v) => ["release", "snapshot"].includes(v.type))
-                    .map((v) => (
-                      <SelectItem key={v.id} value={v.id}>
-                        {v.id} · {v.type}
-                      </SelectItem>
-                    ))}
+                  {loaderVersions.map((l) => (
+                    <SelectItem key={l.version} value={l.version}>
+                      {l.version}
+                      {l.stable
+                        ? l.version.includes("beta") || l.version.includes("alpha")
+                          ? " · latest beta"
+                          : " · recommended"
+                        : l.version.includes("beta") || l.version.includes("alpha")
+                          ? " · beta"
+                          : ""}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
-              <Label>Loader</Label>
-              <div className="row" style={{ flexWrap: "wrap", gap: 8 }}>
-                {LOADER_OPTIONS.map((opt) => (
-                  <Button
-                    key={opt.type}
-                    variant={loaderType === opt.type ? "secondary" : "outline"}
-                    onClick={() => setLoaderType(opt.type)}
-                  >
-                    {opt.label}
-                  </Button>
-                ))}
-              </div>
-              {loaderType !== "vanilla" && (
-                <>
-                  <Label>{loaderName} version</Label>
-                  <Select
-                    value={loaderVersion}
-                    onValueChange={setLoaderVersion}
-                    disabled={loadingLoaders || !loaderVersions.length}
-                  >
-                    <SelectTrigger>
-                      <SelectValue
-                        placeholder={
-                          loadingLoaders
-                            ? `Loading ${loaderName} versions…`
-                            : `Choose ${loaderName} version`
-                        }
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {loaderVersions.map((l) => (
-                        <SelectItem key={l.version} value={l.version}>
-                          {l.version}
-                          {l.stable
-                            ? l.version.includes("beta") || l.version.includes("alpha")
-                              ? " · latest beta"
-                              : " · recommended"
-                            : l.version.includes("beta") || l.version.includes("alpha")
-                              ? " · beta"
-                              : ""}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p>
-                    {loaderLabel({
-                      loader: { type: loaderType, version: loaderVersion || null },
-                    })}{" "}
-                    installs into this instance only. Mods go in the instance mods
-                    folder.
-                  </p>
-                </>
-              )}
-            </>
-          )}
-          {edition === "java" && (
-            <>
-              <Label>
-                Memory · {ram[0]}–{ram[1]} MB
-              </Label>
-              <Slider
-                aria-label="Minimum and maximum memory"
-                min={512}
-                max={maxRam}
-                step={512}
-                minStepsBetweenThumbs={0}
-                value={ram}
-                onValueChange={setRam}
-              />
               <p>
-                {Math.round(totalMemory / 1024)} GB system RAM. Leave room for
-                Windows and other apps.
-              </p>
-              <Label>Java runtime</Label>
-              <div className="row">
-                <Button
-                  variant={!java ? "secondary" : "outline"}
-                  onClick={() => setJava(null)}
-                >
-                  Automatic
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    void command<Runtime | null>("browse_java")
-                      .then((r) => {
-                        if (r) setJava(r.path);
-                      })
-                      .catch((e) => onError(message(e)));
-                  }}
-                >
-                  Browse for Java
-                </Button>
-              </div>
-              <p className="break-all">
-                {java ??
-                  "Detect compatible Java, or install a verified runtime from Mojang."}
+                {loaderLabel({
+                  loader: { type: loaderType, version: loaderVersion || null },
+                })}{" "}
+                installs into this instance only. Mods go in the instance mods
+                folder.
               </p>
             </>
           )}
+          <Label>
+            Memory · {ram[0]}–{ram[1]} MB
+          </Label>
+          <Slider
+            aria-label="Minimum and maximum memory"
+            min={512}
+            max={maxRam}
+            step={512}
+            minStepsBetweenThumbs={0}
+            value={ram}
+            onValueChange={setRam}
+          />
+          <p>
+            {Math.round(totalMemory / 1024)} GB system RAM. Leave room for
+            Windows and other apps.
+          </p>
+          <Label>Java runtime</Label>
+          <div className="row">
+            <Button
+              variant={!java ? "secondary" : "outline"}
+              onClick={() => setJava(null)}
+            >
+              Automatic
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                void command<Runtime | null>("browse_java")
+                  .then((r) => {
+                    if (r) setJava(r.path);
+                  })
+                  .catch((e) => onError(message(e)));
+              }}
+            >
+              Browse for Java
+            </Button>
+          </div>
+          <p className="break-all">
+            {java ??
+              "Detect compatible Java, or install a verified runtime from Mojang."}
+          </p>
+
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>

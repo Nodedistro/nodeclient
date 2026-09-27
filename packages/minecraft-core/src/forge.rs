@@ -281,7 +281,8 @@ async fn download_installer(
             path,
             sha1: Some(sha1),
             sha256: None,
-            size: Some(64 * 1024 * 1024),
+            // Exact byte length only. A cap here makes verify() reject every installer.
+            size: None,
         }],
         1,
         cancel,

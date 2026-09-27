@@ -6,7 +6,7 @@ export const instanceSchema = z
   .object({
     id: z.string().regex(/^[a-zA-Z0-9_-][a-zA-Z0-9._-]*$/),
     name: z.string().trim().min(1).max(100),
-    edition: z.enum(["java", "bedrock"]).default("java"),
+    edition: z.literal("java").default("java"),
     minecraftVersion: z.string().min(1),
     loader: z.object({
       type: z.enum(loaderTypes),

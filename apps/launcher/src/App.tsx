@@ -231,11 +231,6 @@ export default function App() {
     setBusy(true);
     setError("");
     try {
-      if (selected.edition === "bedrock") {
-        await command("launch_bedrock");
-        await refresh();
-        return;
-      }
       await command("launch", {
         id: selected.id,
         installOnly,

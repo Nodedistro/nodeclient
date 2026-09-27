@@ -45,7 +45,7 @@ impl Instance {
         if self.name.trim().is_empty() || self.name.len() > 100 {
             bail!("Instance name must contain 1–100 characters.");
         }
-        if !["java", "bedrock"].contains(&self.edition.as_str()) {
+        if self.edition != "java" {
             bail!("Unsupported Minecraft edition.");
         }
         match self.loader.r#type.as_str() {

@@ -11,6 +11,10 @@ describe("instance configuration", () => {
   };
   it("validates real configurations", () =>
     expect(instanceSchema.safeParse(sample).success).toBe(true));
+  it("defaults legacy instances to Java and rejects other editions", () => {
+    expect(instanceSchema.parse(sample).edition).toBe("java");
+    expect(instanceSchema.safeParse({ ...sample, edition: "bedrock" }).success).toBe(false);
+  });
   it("rejects traversal and inverted RAM", () => {
     expect(
       instanceSchema.safeParse({ ...sample, id: "../outside" }).success,

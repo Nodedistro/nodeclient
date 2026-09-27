@@ -35,6 +35,10 @@ impl Store {
                 let path = self.instance_dir(&id)?.join("instance.json");
                 if path.exists() {
                     let instance: Instance = serde_json::from_slice(&fs::read(path)?)?;
+                    // Preserve unsupported legacy instances on disk without listing them.
+                    if instance.edition != "java" {
+                        continue;
+                    }
                     instance.validate()?;
                     if instance.id != id {
                         bail!("Instance directory and metadata ID disagree.");
@@ -168,6 +172,27 @@ mod tests {
 #[cfg(test)]
 mod persistence_tests {
     use super::*;
+    #[test]
+    fn unsupported_instances_are_preserved_but_not_listed() {
+        let root = tempfile::tempdir().unwrap();
+        let store = Store::new(root.path().to_owned()).unwrap();
+        let mut instance: Instance = serde_json::from_value(serde_json::json!({"id":"legacy","name":"Legacy","edition":"bedrock","minecraftVersion":"bedrock","loader":{"type":"vanilla"},"java":{"mode":"automatic","path":null},"memory":{"minimumMb":1024,"maximumMb":2048}})).unwrap();
+        assert!(store.save(&instance).is_err());
+        let directory = store.instance_dir("legacy").unwrap();
+        fs::create_dir_all(&directory).unwrap();
+        let metadata = directory.join("instance.json");
+        let original = serde_json::to_vec(&instance).unwrap();
+        fs::write(&metadata, &original).unwrap();
+        instance.id = "java".into();
+        instance.edition = "java".into();
+        instance.minecraft_version = "1.21".into();
+        store.save(&instance).unwrap();
+        let visible = store.instances().unwrap();
+        assert_eq!(visible.len(), 1);
+        assert_eq!(visible[0].id, "java");
+        assert!(store.get("legacy").is_err());
+        assert_eq!(fs::read(metadata).unwrap(), original);
+    }
     #[test]
     fn atomic_replacement_and_instance_lifecycle() {
         let root = tempfile::tempdir().unwrap();

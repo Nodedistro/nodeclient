@@ -879,39 +879,6 @@ async fn launch(
     result.map_err(error)
 }
 #[tauri::command]
-fn launch_bedrock(app: tauri::AppHandle) -> CommandResult<()> {
-    #[cfg(target_os = "windows")]
-    {
-        status(&app, "LAUNCHING", "Opening Minecraft for Windows", None);
-        std::process::Command::new("explorer.exe")
-            .arg("minecraft://")
-            .spawn()
-            .map_err(|e| format!("Minecraft for Windows could not be opened: {e}"))?;
-        status(&app, "IDLE", "Minecraft for Windows opened.", None);
-        Ok(())
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        let _ = app;
-        Err("Bedrock launch integration is currently available on Windows only.".into())
-    }
-}
-#[tauri::command]
-fn open_bedrock_store() -> CommandResult<()> {
-    #[cfg(target_os = "windows")]
-    {
-        std::process::Command::new("explorer.exe")
-            .arg("ms-windows-store://pdp/?productid=9NBLGGH2JHXJ")
-            .spawn()
-            .map(|_| ())
-            .map_err(|e| format!("Microsoft Store could not be opened: {e}"))
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        Err("Microsoft Store installation is currently available on Windows only.".into())
-    }
-}
-#[tauri::command]
 async fn repair_instance(app: tauri::AppHandle, id: String) -> CommandResult<()> {
     let state = app.state::<AppState>();
     if state
@@ -994,9 +961,7 @@ async fn launch_body(
     install_only: bool,
     server: Option<(String, u16)>,
 ) -> Result<()> {
-    if instance.edition == "bedrock" {
-        bail!("Bedrock Edition instances are saved, but Bedrock launch support is not available yet. Java Edition uses the verified launcher flow today.");
-    }
+    instance.validate()?;
     let state = app.state::<AppState>();
     let session = if install_only {
         None
@@ -1369,8 +1334,6 @@ fn main() {
             install_update,
             cancel_update,
             launch,
-            launch_bedrock,
-            open_bedrock_store,
             repair_instance,
             explain_crash,
             list_backups,
