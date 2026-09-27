@@ -307,6 +307,7 @@ async fn run_installer(
     if !jar.is_file() {
         bail!("Mod loader installer jar is missing.");
     }
+    ensure_launcher_profile(root)?;
     let mut command = tokio::process::Command::new(java);
     command
         .arg("-jar")
@@ -346,6 +347,21 @@ async fn run_installer(
     Ok(())
 }
 
+/// Forge and NeoForge refuse `--installClient` unless this file exists, then they insert a profile into it.
+fn ensure_launcher_profile(root: &Path) -> Result<()> {
+    let path = root.join("launcher_profiles.json");
+    let store = root.join("launcher_profiles_microsoft_store.json");
+    if path.is_file() || store.is_file() {
+        return Ok(());
+    }
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&path, "{\n  \"profiles\": {}\n}\n")
+        .context("Could not create the launcher profile the mod installer requires.")?;
+    Ok(())
+}
+
 fn compare_version(a: &str, b: &str) -> std::cmp::Ordering {
     let parse = |s: &str| -> Vec<u64> {
         s.split(|c: char| !c.is_ascii_digit())
@@ -381,6 +397,20 @@ mod tests {
             "1.21.1-forge-52.1.0"
         );
         assert_eq!(neoforge_profile_id("21.1.251"), "neoforge-21.1.251");
+    }
+
+    #[test]
+    fn launcher_profile_stub_is_created_once() {
+        let dir = tempfile::tempdir().unwrap();
+        ensure_launcher_profile(dir.path()).unwrap();
+        let path = dir.path().join("launcher_profiles.json");
+        let value: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert!(value["profiles"].is_object());
+        std::fs::write(&path, "{\"profiles\":{\"keep\":true}}").unwrap();
+        ensure_launcher_profile(dir.path()).unwrap();
+        let again = std::fs::read_to_string(&path).unwrap();
+        assert!(again.contains("\"keep\":true"));
     }
 
     #[test]
