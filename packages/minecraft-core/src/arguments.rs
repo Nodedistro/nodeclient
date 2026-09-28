@@ -62,7 +62,14 @@ pub fn construct(
         ),
         ("user_type", "msa".into()),
         ("user_properties", "{}".into()),
-        ("version_name", instance.minecraft_version.clone()),
+        // Must be the launched profile id: Forge/NeoForge put `${version_name}.jar` in -DignoreList.
+        (
+            "version_name",
+            version["id"]
+                .as_str()
+                .unwrap_or(&instance.minecraft_version)
+                .to_owned(),
+        ),
         (
             "version_type",
             version["type"].as_str().unwrap_or("release").into(),
@@ -234,6 +241,15 @@ mod security_regressions {
         let args = construct(&version, &installation, Path::new("game"), &instance, &Settings::default(), &Profile { id: "id".into(), name: "name".into(), ..Default::default() }, "token", "client", Some(("play.example.com", 25565))).unwrap();
         assert!(args.windows(2).any(|w| w == ["--server", "play.example.com"]));
         assert!(args.windows(2).any(|w| w == ["--port", "25565"]));
+    }
+
+    #[test]
+    fn loader_ignore_list_uses_launched_profile_id() {
+        let version = serde_json::json!({"id":"neoforge-21.1.252","type":"release","mainClass":"cpw.mods.bootstraplauncher.BootstrapLauncher","arguments":{"jvm":["-DignoreList=client-extra,${version_name}.jar"],"game":[]}});
+        let installation = Installation { classpath: vec!["client.jar".into()], natives: "natives".into(), asset_index: "test".into(), assets: "assets".into(), game_assets: "assets".into(), logging: None };
+        let instance: Instance = serde_json::from_value(serde_json::json!({"id":"test","name":"Test","minecraftVersion":"1.21.1","loader":{"type":"neoforge","version":"21.1.252"},"java":{"mode":"automatic","path":null},"memory":{"minimumMb":1024,"maximumMb":2048}})).unwrap();
+        let args = construct(&version, &installation, Path::new("game"), &instance, &Settings::default(), &Profile { id: "id".into(), name: "name".into(), ..Default::default() }, "token", "client", None).unwrap();
+        assert!(args.contains(&"-DignoreList=client-extra,neoforge-21.1.252.jar".to_owned()));
     }
 
     #[test]
