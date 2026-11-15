@@ -3,7 +3,7 @@ use nodeclient_types::{safe_id, safe_join};
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
-    io::{Read, Write},
+    io::Read,
     path::{Path, PathBuf},
     time::SystemTime,
 };

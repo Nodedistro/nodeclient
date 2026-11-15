@@ -19,12 +19,15 @@ export function SetupWizard({
   onError: (s: string) => void;
 }) {
   const [step, setStep] = useState(0);
+  const [engine, setEngine] = useState<"horizon" | "java">("horizon");
   const [channel, setChannel] = useState("release");
   const [runtimes, setRuntimes] = useState<Runtime[]>([]);
   const [scanned, setScanned] = useState(false);
   async function finish() {
     try {
-      const version = manifest?.latest[channel as "release" | "snapshot"];
+      const version = engine === "horizon"
+        ? "26.3"
+        : manifest?.latest[channel as "release" | "snapshot"];
       if (!version)
         throw new Error(
           "Load the official Minecraft version list before finishing setup.",
@@ -32,6 +35,7 @@ export function SetupWizard({
       const saved = await command<Instance>("save_instance", {
         instance: {
           id: null,
+          engine,
           name:
             channel === "release" ? "My first adventure" : "Snapshot explorer",
           minecraftVersion: version,
@@ -67,7 +71,7 @@ export function SetupWizard({
             once. Play.
           </h1>
           <p>
-            Account, Java, and a first instance.
+            Account, engine, and a first instance.
             <br />
             Then you’re ready.
           </p>
@@ -76,8 +80,8 @@ export function SetupWizard({
           {[
             "Welcome",
             "Minecraft account",
-            "Java runtime",
-            "Minecraft version",
+            "Game engine",
+            "Starting version",
             "Ready",
           ].map((s, i) => (
             <li
@@ -137,10 +141,38 @@ export function SetupWizard({
         {step === 2 && (
           <>
             <Cpu size={40} />
-            <h1>Java</h1>
+            <h1>Game engine</h1>
             <p>
-              NodeClient finds a compatible runtime for your Minecraft version,
-              or installs verified Java files from Mojang when needed.
+              Horizon runs Minecraft natively in Rust. Java remains available
+              for Java mod loaders and mods.
+            </p>
+            <div className="channel-options">
+              <Button
+                variant={engine === "horizon" ? "secondary" : "outline"}
+                className="channel-option"
+                onClick={() => setEngine("horizon")}
+              >
+                <span>
+                  Horizon · Native Rust
+                  <strong>Recommended · Minecraft 26.3</strong>
+                </span>
+                {engine === "horizon" && <Check size={18} />}
+              </Button>
+              <Button
+                variant={engine === "java" ? "secondary" : "outline"}
+                className="channel-option"
+                onClick={() => setEngine("java")}
+              >
+                <span>
+                  Minecraft · Java
+                  <strong>Fabric, Quilt, Forge, NeoForge</strong>
+                </span>
+                {engine === "java" && <Check size={18} />}
+              </Button>
+            </div>
+            <p>
+              Horizon uses Java 25 only for first-time resource preparation;
+              gameplay runs in the Rust executable.
             </p>
             <Button
               variant="outline"
@@ -153,7 +185,7 @@ export function SetupWizard({
                   .catch((e) => onError(message(e)));
               }}
             >
-              Detect Java installations
+              Detect preparation Java
             </Button>
             {scanned && (
               <p>
@@ -170,9 +202,13 @@ export function SetupWizard({
         )}
         {step === 3 && (
           <>
-            <h1>Starting version</h1>
-            <p>You can add more versions and instances anytime.</p>
-            <div className="channel-options">
+            <h1>{engine === "horizon" ? "Minecraft 26.3" : "Starting version"}</h1>
+            <p>
+              {engine === "horizon"
+                ? "This verified Horizon build is pinned to Minecraft 26.3."
+                : "You can add more versions and instances anytime."}
+            </p>
+            {engine === "java" && <div className="channel-options">
               {["release", "snapshot"].map((c) => (
                 <Button
                   key={c}
@@ -190,8 +226,11 @@ export function SetupWizard({
                   {channel === c && <Check size={18} />}
                 </Button>
               ))}
-            </div>
-            <Button onClick={() => setStep(4)} disabled={!manifest}>
+            </div>}
+            <Button
+              onClick={() => setStep(4)}
+              disabled={engine === "java" && !manifest}
+            >
               Continue
               <ArrowRight size={16} />
             </Button>
@@ -204,9 +243,11 @@ export function SetupWizard({
             </div>
             <h1>Ready to launch</h1>
             <p>
-              Your first instance will use Minecraft{" "}
-              {manifest?.latest[channel as "release" | "snapshot"]} with Vanilla
-              and automatic Java. Game files download when you choose Install.
+              Your first instance will use{" "}
+              {engine === "horizon"
+                ? "Horizon’s native Rust engine with Minecraft 26.3"
+                : `Minecraft ${manifest?.latest[channel as "release" | "snapshot"]} with Java`}.
+              Game files download when you choose Install.
             </p>
             <Button size="lg" onClick={() => void finish()}>
               Open NodeClient

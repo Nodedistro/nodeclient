@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   ArrowDownToLine,
+  Cpu,
   FolderOpen,
   LoaderCircle,
   Pencil,
@@ -46,6 +47,7 @@ export function HomePage({
   onPlay,
   onSafePlay,
   onEdit,
+  onUseRust,
   onOpenLogs,
   onAction,
   onRefresh,
@@ -64,6 +66,7 @@ export function HomePage({
   onPlay: () => void;
   onSafePlay: () => void;
   onEdit: () => void;
+  onUseRust: () => void;
   onOpenLogs: (kind: string) => void;
   onAction: (task: () => Promise<unknown>) => Promise<void>;
   onRefresh: () => Promise<void>;
@@ -159,6 +162,17 @@ export function HomePage({
             </Button>
             {selected && (
               <>
+                {selected.engine !== "horizon" && (
+                  <Button
+                    variant="secondary"
+                    disabled={active}
+                    onClick={onUseRust}
+                    title="Copy this instance’s worlds into a Horizon native Rust instance"
+                  >
+                    <Cpu size={16} />
+                    Use Rust
+                  </Button>
+                )}
                 {installed && selected.engine !== "horizon" && (
                   <Button
                     variant="outline"

@@ -207,6 +207,16 @@ export default function App() {
     void action(() => saveSettings({ ...data.settings, selectedInstance: id }));
   };
 
+  const useRust = async () => {
+    if (!selected) return;
+    setBusy(true);
+    await action(async () => {
+      await command("create_horizon_copy", { id: selected.id });
+      await refresh();
+    });
+    setBusy(false);
+  };
+
   const selectVersion = async (version: string) => {
     if (selected && selected.engine !== "horizon") {
       await command("save_instance", {
@@ -494,6 +504,7 @@ export default function App() {
               onPlay={() => void play()}
               onSafePlay={() => void play({ safeMode: true })}
               onEdit={() => openEditor(selected)}
+              onUseRust={() => void useRust()}
               onOpenLogs={(kind) => {
                 setLogKind(kind);
                 setPage("Logs");

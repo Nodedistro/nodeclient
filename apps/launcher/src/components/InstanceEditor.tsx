@@ -152,6 +152,19 @@ export function InstanceEditor({
       setSaving(false);
     }
   }
+  async function createHorizonCopy() {
+    if (!instance) return;
+    setSaving(true);
+    try {
+      await command<Instance>("create_horizon_copy", { id: instance.id });
+      await onSaved();
+      onClose();
+    } catch (e) {
+      onError(message(e));
+    } finally {
+      setSaving(false);
+    }
+  }
 
   const maxRam = Math.min(
     65536,
@@ -192,7 +205,17 @@ export function InstanceEditor({
             <Button disabled={!!instance} variant={engine === "horizon" ? "secondary" : "outline"} onClick={() => setEngine("horizon")}>Horizon · Native Rust</Button>
             <Button disabled={!!instance} variant={engine === "java" ? "secondary" : "outline"} onClick={() => setEngine("java")}>Minecraft · Java</Button>
           </div>
-          {instance && <p>Create a new instance to use another engine. Existing worlds stay with this engine.</p>}
+          {instance?.engine === "java" && <>
+            <p>This instance uses Java. Create a Horizon copy to run its worlds with the Rust engine; the Java instance and its mods stay untouched.</p>
+            <Button
+              variant="secondary"
+              disabled={saving}
+              onClick={() => void createHorizonCopy()}
+            >
+              Create Horizon Rust copy
+            </Button>
+          </>}
+          {instance?.engine === "horizon" && <p>This instance already runs with Horizon’s native Rust engine.</p>}
           {engine === "horizon" ? (
             <p>Horizon runs Minecraft 26.3 natively in Rust. Sign in once when NodeClient opens. Initial resource preparation uses Java 25; gameplay runs natively. Java mods and loaders require a Java instance. Horizon compatibility is still evolving.</p>
           ) : (<>

@@ -234,6 +234,18 @@ fn clone_instance(state: tauri::State<AppState>, id: String) -> CommandResult<In
     store.clone_instance(&id).map_err(error)
 }
 #[tauri::command]
+fn create_horizon_copy(state: tauri::State<AppState>, id: String) -> CommandResult<Instance> {
+    let store = state.store.lock().unwrap();
+    if state.busy.load(Ordering::SeqCst) {
+        return Err("Wait until Minecraft closes before creating a Rust instance.".into());
+    }
+    let instance = store.create_horizon_copy(&id).map_err(error)?;
+    let mut settings = store.settings().map_err(error)?;
+    settings.selected_instance = Some(instance.id.clone());
+    store.save_settings(&settings).map_err(error)?;
+    Ok(instance)
+}
+#[tauri::command]
 fn delete_instance(
     state: tauri::State<AppState>,
     id: String,
@@ -1336,6 +1348,7 @@ fn main() {
             save_settings,
             save_instance,
             clone_instance,
+            create_horizon_copy,
             delete_instance,
             open_instance,
             list_mods,

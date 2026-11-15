@@ -130,6 +130,28 @@ impl Store {
         self.save(&instance)?;
         Ok(instance)
     }
+    pub fn create_horizon_copy(&self, id: &str) -> Result<Instance> {
+        let source_instance = self.get(id)?;
+        if source_instance.engine == "horizon" { bail!("This instance already uses Horizon."); }
+        let instance = Instance {
+            id: uuid::Uuid::new_v4().to_string(), name: format!("{} · Rust", source_instance.name),
+            edition: "java".into(), engine: "horizon".into(), minecraft_version: "26.3".into(),
+            loader: nodeclient_types::Loader { r#type: "vanilla".into(), version: None },
+            java: nodeclient_types::Java { mode: "automatic".into(), path: None },
+            memory: source_instance.memory.clone(), last_played: None, playtime_seconds: 0,
+        };
+        instance.validate()?;
+        let source_saves = self.instance_dir(id)?.join("saves");
+        let target = self.instance_dir(&instance.id)?;
+        let result = (|| -> Result<()> {
+            self.save(&instance)?;
+            if source_saves.is_dir() { copy_tree(&source_saves, &target.join("saves"))?; }
+            Ok(())
+        })();
+        if result.is_err() && target.exists() { let _ = fs::remove_dir_all(&target); }
+        result?;
+        Ok(instance)
+    }
     pub fn settings(&self) -> Result<Settings> {
         let p = safe_join(&self.root, "settings.json")?;
         if !p.exists() {
@@ -215,6 +237,19 @@ mod persistence_tests {
         assert!(store.prepare_instance(serde_json::from_value(value.clone()).unwrap()).is_err());
         value["id"]=serde_json::Value::Null;value["engine"]="horizon".into();value["minecraftVersion"]="1.21".into();
         assert!(store.prepare_instance(serde_json::from_value(value).unwrap()).is_err());
+    }
+    #[test]
+    fn horizon_copy_preserves_worlds_and_leaves_the_java_instance_unchanged() {
+        let root=tempfile::tempdir().unwrap();let store=Store::new(root.path().to_owned()).unwrap();
+        let input=serde_json::json!({"name":"Java world","engine":"java","minecraftVersion":"1.21","loader":{"type":"fabric","version":"0.16.0"},"java":{"mode":"automatic","path":null},"memory":{"minimumMb":1024,"maximumMb":2048}});
+        let java=store.prepare_instance(serde_json::from_value(input).unwrap()).unwrap();store.save(&java).unwrap();
+        std::fs::write(store.instance_dir(&java.id).unwrap().join("saves/level.dat"),b"world").unwrap();
+        std::fs::write(store.instance_dir(&java.id).unwrap().join("mods/java-only.jar"),b"mod").unwrap();
+        let native=store.create_horizon_copy(&java.id).unwrap();
+        assert_eq!(native.engine,"horizon");assert_eq!(native.minecraft_version,"26.3");assert_eq!(native.loader.r#type,"vanilla");
+        assert_eq!(std::fs::read(store.instance_dir(&native.id).unwrap().join("saves/level.dat")).unwrap(),b"world");
+        assert!(!store.instance_dir(&native.id).unwrap().join("mods/java-only.jar").exists());
+        assert_eq!(store.get(&java.id).unwrap().engine,"java");
     }
     #[test]
     fn rust_creates_ids_and_preserves_history_when_editing() {
