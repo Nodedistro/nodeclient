@@ -9,6 +9,8 @@ pub struct Instance {
     pub name: String,
     #[serde(default = "default_edition")]
     pub edition: String,
+    #[serde(default = "default_edition")]
+    pub engine: String,
     pub minecraft_version: String,
     pub loader: Loader,
     pub java: Java,
@@ -47,6 +49,12 @@ impl Instance {
         }
         if self.edition != "java" {
             bail!("Unsupported Minecraft edition.");
+        }
+        if !["java", "horizon"].contains(&self.engine.as_str()) {
+            bail!("Unsupported game engine.");
+        }
+        if self.engine == "horizon" && (self.minecraft_version != "26.3" || self.loader.r#type != "vanilla" || self.loader.version.is_some()) {
+            bail!("Horizon instances require Minecraft 26.3 and cannot use Java mod loaders.");
         }
         match self.loader.r#type.as_str() {
             "vanilla" => {}

@@ -124,6 +124,19 @@ export function ModsPage({
     );
   }
 
+  if (instance.engine === "horizon") {
+    return (
+      <div className="empty-state">
+        <Package size={36} />
+        <h2>Horizon native content</h2>
+        <p>This browser installs Java mods. Choose a Java instance to use Fabric, Quilt, Forge, or NeoForge mods. Horizon requires its own compatible native mods.</p>
+        <Button variant="outline" disabled={!desktop} onClick={() => void onAction(() => command("open_instance", { id }))}>
+          Open Horizon instance folder
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="stack">
       <div className="section-heading">

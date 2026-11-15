@@ -113,7 +113,8 @@ pub async fn verify(item: &Download) -> Result<bool> {
     }
     let mut sha1 = Sha1::new();
     let mut sha256 = sha2::Sha256::new();
-    let mut buffer = [0u8; 65536];
+    // Keep the checksum buffer out of nested download futures on Windows' small stacks.
+    let mut buffer = vec![0u8; 65536];
     loop {
         let n = file.read(&mut buffer).await?;
         if n == 0 {

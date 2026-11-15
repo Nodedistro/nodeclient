@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod instance_content;
+mod horizon_launch;
 mod modrinth;
 mod performance;
 mod troubleshoot;
@@ -33,6 +34,8 @@ struct Status {
 struct AppState {
     store: Mutex<Store>,
     pending: tokio::sync::Mutex<Option<Pending>>,
+    sessions: Mutex<std::collections::HashMap<String, nodeclient_auth::auth_manager::Session>>,
+    startup_auth: tokio::sync::OnceCell<CommandResult<()>>,
     busy: AtomicBool,
     cancel: Arc<AtomicBool>,
     update_cancel: Arc<AtomicBool>,
@@ -123,6 +126,28 @@ fn reporter(app: &tauri::AppHandle) -> nodeclient_downloader::Reporter {
     })
 }
 #[tauri::command]
+async fn initialize_auth(state: tauri::State<'_, AppState>) -> CommandResult<()> {
+    state.startup_auth.get_or_init(|| async {
+        let accounts = state.store.lock().unwrap().accounts().map_err(error)?;
+        let mut failures = Vec::new();
+        for account in accounts {
+            match nodeclient_auth::auth_manager::restore(&config(), &account.id).await {
+                Ok(session) => {
+                    let store = state.store.lock().unwrap();
+                    if store.accounts().map_err(error)?.iter().any(|p| p.id == account.id) {
+                        store.save_account(session.profile.clone()).map_err(error)?;
+                        state.sessions.lock().unwrap().entry(account.id).or_insert(session);
+                    }
+                }
+                Err(e) => failures.push(format!("{}: {}", account.name, error(e))),
+            }
+        }
+        if failures.is_empty() { Ok(()) } else {
+            Err(format!("Startup authentication failed. Sign in again or reopen NodeClient. {}", failures.join("; ")))
+        }
+    }).await.clone()
+}
+#[tauri::command]
 fn snapshot(state: tauri::State<AppState>) -> CommandResult<Snapshot> {
     (|| -> Result<Snapshot> {
         let store = state.store.lock().unwrap();
@@ -137,6 +162,8 @@ fn snapshot(state: tauri::State<AppState>) -> CommandResult<Snapshot> {
                     .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
                     .is_some_and(|marker| {
                         marker["version"] == i.minecraft_version
+                            && marker["engine"].as_str().unwrap_or("java") == i.engine
+                            && (i.engine != "horizon" || marker["build"] == nodeclient_horizon::BUILD)
                             && marker["loader"].as_str().unwrap_or("vanilla") == i.loader.r#type
                             && marker
                                 .get("loaderVersion")
@@ -171,7 +198,8 @@ fn save_settings(state: tauri::State<AppState>, settings: Settings) -> CommandRe
         .map_err(error)
 }
 #[tauri::command]
-async fn save_instance(state: tauri::State<'_, AppState>, instance: Instance) -> CommandResult<()> {
+async fn save_instance(state: tauri::State<'_, AppState>, instance: nodeclient_profiles::InstanceInput) -> CommandResult<Instance> {
+    let instance = state.store.lock().unwrap().prepare_instance(instance).map_err(error)?;
     if state.busy.load(Ordering::SeqCst) {
         return Err("Wait until the active operation or game finishes.".into());
     }
@@ -194,7 +222,8 @@ async fn save_instance(state: tauri::State<'_, AppState>, instance: Instance) ->
             "Leave at least one quarter of system RAM available to the operating system.".into(),
         );
     }
-    store.save(&instance).map_err(error)
+    store.save(&instance).map_err(error)?;
+    Ok(instance)
 }
 #[tauri::command]
 fn clone_instance(state: tauri::State<AppState>, id: String) -> CommandResult<Instance> {
@@ -313,6 +342,7 @@ async fn install_modrinth_mod(
                 store.settings()?.concurrency,
             )
         };
+        if instance.engine == "horizon" { bail!("Java mods cannot be installed in Horizon instances. Use a Java instance for Modrinth Java mods."); }
         let loader = instance.loader.r#type.clone();
         status(
             &app,
@@ -803,6 +833,7 @@ async fn finish_login(app: &tauri::AppHandle, callback: &str) -> Result<Profile>
         let mut settings = store.settings()?;
         settings.selected_account = Some(session.profile.id.clone());
         store.save_settings(&settings)?;
+        state.sessions.lock().unwrap().insert(session.profile.id.clone(), session.clone());
     }
     let _ = app.emit("account-changed", &session.profile);
     Ok(session.profile)
@@ -819,6 +850,7 @@ fn remove_account(state: tauri::State<AppState>, id: String) -> CommandResult<()
         OsTokenStore.remove(&id)?;
         let store = state.store.lock().unwrap();
         store.remove_account(&id)?;
+        state.sessions.lock().unwrap().remove(&id);
         let mut s = store.settings()?;
         if s.selected_account.as_deref() == Some(&id) {
             s.selected_account = None;
@@ -924,6 +956,9 @@ async fn launch_inner(
             store.settings()?,
         )
     };
+    if safe_mode && instance.engine == "horizon" {
+        bail!("Java-mod safe mode is not available for Horizon. Manage native mods in Horizon.");
+    }
     let disabled_mods = if safe_mode && !install_only {
         status(
             app,
@@ -963,26 +998,20 @@ async fn launch_body(
 ) -> Result<()> {
     instance.validate()?;
     let state = app.state::<AppState>();
-    let session = if install_only {
+    let session = if install_only && instance.engine != "horizon" {
         None
     } else {
-        status(
-            app,
-            "AUTHENTICATING",
-            "Checking your Minecraft account",
-            None,
-        );
-        Some(
-            nodeclient_auth::auth_manager::restore(
-                &config(),
-                settings
-                    .selected_account
-                    .as_deref()
-                    .context("Sign in with Microsoft and select an account before playing.")?,
-            )
-            .await?,
-        )
+        let id = settings.selected_account.as_deref()
+            .context("Sign in with Microsoft and select an account before playing.")?;
+        let session = state.sessions.lock().unwrap().get(id).cloned()
+            .context("No verified session for this account. Sign in again or reopen NodeClient.")?;
+        session.validate_lifetime()?;
+        Some(session)
     };
+    if instance.engine == "horizon" {
+        return horizon_launch::run(app, root, game, instance, settings, id, install_only, server,
+            session.context("Horizon requires a verified account before preparation or play")?).await;
+    }
     if !install_only {
         match instance_content::ensure_vanilla_worlds_imported(root, id) {
             Ok(n) if n > 0 => {
@@ -1094,6 +1123,10 @@ async fn launch_body(
         bail!("Launch cancelled.");
     }
     let session = session.context("Authenticated session missing")?;
+    if !state.sessions.lock().unwrap().contains_key(&session.profile.id) {
+        bail!("This account was signed out. Sign in again before playing.");
+    }
+    session.validate_lifetime()?;
     if let Some((host, port)) = &server {
         let address = if host.contains(':') {
             format!("[{host}]:{port}")
@@ -1272,6 +1305,8 @@ fn main() {
             app.manage(AppState {
                 store: Mutex::new(store),
                 pending: tokio::sync::Mutex::new(None),
+                sessions: Mutex::new(std::collections::HashMap::new()),
+                startup_auth: tokio::sync::OnceCell::new(),
                 busy: AtomicBool::new(false),
                 cancel: Arc::new(AtomicBool::new(false)),
                 update_cancel: Arc::new(AtomicBool::new(false)),
@@ -1296,6 +1331,7 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            initialize_auth,
             snapshot,
             save_settings,
             save_instance,

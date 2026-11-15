@@ -2,7 +2,7 @@ import { useState } from "react";
 import { ArrowRight, Check, Cpu, Leaf } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { command, message } from "@/lib/api";
-import type { Manifest, Snapshot, Runtime } from "@/lib/models";
+import type { Instance, Manifest, Snapshot, Runtime } from "@/lib/models";
 import { defaultMemory } from "@/lib/models";
 import { AccountPanel } from "./AccountPanel";
 export function SetupWizard({
@@ -29,10 +29,9 @@ export function SetupWizard({
         throw new Error(
           "Load the official Minecraft version list before finishing setup.",
         );
-      const id = crypto.randomUUID();
-      await command("save_instance", {
+      const saved = await command<Instance>("save_instance", {
         instance: {
-          id,
+          id: null,
           name:
             channel === "release" ? "My first adventure" : "Snapshot explorer",
           minecraftVersion: version,
@@ -42,15 +41,13 @@ export function SetupWizard({
             minimumMb: 1024,
             maximumMb: defaultMemory(data.totalMemoryMb),
           },
-          lastPlayed: null,
-          playtimeSeconds: 0,
         },
       });
       await command("save_settings", {
         settings: {
           ...data.settings,
           setupComplete: true,
-          selectedInstance: id,
+          selectedInstance: saved.id,
         },
       });
       await onDone();

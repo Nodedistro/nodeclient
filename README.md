@@ -2,6 +2,10 @@
 
 NodeClient is owned by Nodedistro.
 
+Native Rust gameplay is available through separate **Horizon** instances targeting Minecraft 26.3. See [installation, authentication, compatibility limits, and upstream attribution](docs/horizon.md). Existing Java instances retain their engine and worlds.
+
+The repository also contains **NodeEngine**, our original experimental native Rust voxel engine. Run `pnpm engine` for its first playable sandbox milestone. See [native engine controls, compatibility limits, and roadmap](docs/native-engine.md). It does not yet replace the Java Minecraft client.
+
 An original desktop launcher for Minecraft Java Edition, built with Tauri 2, Rust, React, TypeScript, Vite, Tailwind CSS, and shadcn/ui. No launcher backend, telemetry, offline accounts, or bundled Minecraft files.
 
 The first milestone is Vanilla: Microsoft sign-in → ownership/profile → official version selection → verified installation → compatible Java → real Minecraft process. Fabric, mods, server management, screenshot gallery, and updates are deliberately deferred until that full flow has been verified.
@@ -40,7 +44,7 @@ Use a **Mobile and desktop applications** platform registration that permits **p
 
 Sign-in opens an in-app Microsoft window. When Microsoft redirects to the configured URI, NodeClient intercepts the response, validates the single-use code and state in Rust, and completes Xbox/Minecraft authentication. No system browser or callback paste is required. The default nativeclient redirect is recommended; a registered localhost/127.0.0.1 HTTP URI with an explicit port also works with the same intercept path.
 
-Minecraft Services access may require Microsoft/Mojang application review. A 403 is reported as a configuration/approval issue, not treated as successful authentication. Development, metadata browsing, and game installation can proceed without account approval. Playing requires fresh authentication, entitlement verification, and the real profile.
+Minecraft Services access may require Microsoft/Mojang application review. A 403 is reported as a configuration/approval issue, not treated as successful authentication. Development, metadata browsing, and game installation can proceed without account approval. Playing uses the verified Rust session established at launcher startup or sign-in. Expired sessions require reopening NodeClient or signing in again.
 
 ## Commands
 

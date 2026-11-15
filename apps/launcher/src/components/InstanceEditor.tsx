@@ -20,7 +20,6 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { command, message } from "@/lib/api";
 import {
-  instanceSchema,
   defaultMemory,
   loaderLabel,
   type LoaderType,
@@ -58,6 +57,7 @@ export function InstanceEditor({
   onError: (s: string) => void;
 }) {
   const [name, setName] = useState("");
+  const [engine, setEngine] = useState<"java" | "horizon">("horizon");
   const [version, setVersion] = useState("");
   const [loaderType, setLoaderType] = useState<LoaderType>("vanilla");
   const [loaderVersion, setLoaderVersion] = useState("");
@@ -70,6 +70,7 @@ export function InstanceEditor({
   useEffect(() => {
     if (open) {
       setName(instance?.name ?? "My world");
+      setEngine(instance?.engine ?? (preferredVersion ? "java" : "horizon"));
       setVersion(
         instance?.minecraftVersion ??
           preferredVersion ??
@@ -93,7 +94,7 @@ export function InstanceEditor({
   }, [open, instance, preferredVersion, manifest, totalMemory]);
 
   useEffect(() => {
-    if (!open || loaderType === "vanilla" || !version) {
+    if (!open || engine === "horizon" || loaderType === "vanilla" || !version) {
       setLoaderVersions([]);
       return;
     }
@@ -125,25 +126,23 @@ export function InstanceEditor({
     return () => {
       cancelled = true;
     };
-  }, [open, loaderType, version, onError]);
+  }, [open, engine, loaderType, version, onError]);
 
   async function save() {
     setSaving(true);
     try {
-      const item = instanceSchema.parse({
-        id: instance?.id ?? crypto.randomUUID(),
+      const item = {
+        id: instance?.id ?? null,
         name,
-        edition: "java",
-        minecraftVersion: version,
+        engine,
+        minecraftVersion: engine === "horizon" ? "26.3" : version,
         loader:
-          loaderType === "vanilla"
+          engine === "horizon" || loaderType === "vanilla"
             ? { type: "vanilla", version: null }
             : { type: loaderType, version: loaderVersion },
         java: { mode: java ? "custom" : "automatic", path: java },
         memory: { minimumMb: ram[0], maximumMb: ram[1] },
-        lastPlayed: instance?.lastPlayed ?? null,
-        playtimeSeconds: instance?.playtimeSeconds ?? 0,
-      });
+      };
       await command("save_instance", { instance: item });
       await onSaved();
       onClose();
@@ -159,8 +158,8 @@ export function InstanceEditor({
     Math.max(2048, Math.floor((totalMemory * 0.75) / 512) * 512),
   );
   const canSave =
-    Boolean(version && name.trim()) &&
-    (loaderType === "vanilla" || Boolean(loaderVersion));
+    Boolean(name.trim()) && (engine === "horizon" || (Boolean(version) &&
+    (loaderType === "vanilla" || Boolean(loaderVersion))));
   const loaderName =
     LOADER_OPTIONS.find((o) => o.type === loaderType)?.label ?? loaderType;
 
@@ -188,6 +187,15 @@ export function InstanceEditor({
             onChange={(e) => setName(e.target.value)}
             maxLength={100}
           />
+          <Label>Game engine</Label>
+          <div className="row">
+            <Button disabled={!!instance} variant={engine === "horizon" ? "secondary" : "outline"} onClick={() => setEngine("horizon")}>Horizon · Native Rust</Button>
+            <Button disabled={!!instance} variant={engine === "java" ? "secondary" : "outline"} onClick={() => setEngine("java")}>Minecraft · Java</Button>
+          </div>
+          {instance && <p>Create a new instance to use another engine. Existing worlds stay with this engine.</p>}
+          {engine === "horizon" ? (
+            <p>Horizon runs Minecraft 26.3 natively in Rust. Sign in once when NodeClient opens. Initial resource preparation uses Java 25; gameplay runs natively. Java mods and loaders require a Java instance. Horizon compatibility is still evolving.</p>
+          ) : (<>
           <Label>Minecraft version</Label>
           <Select value={version} onValueChange={setVersion}>
             <SelectTrigger>
@@ -256,6 +264,8 @@ export function InstanceEditor({
               </p>
             </>
           )}
+          </>)}
+          {engine === "java" && (<>
           <Label>
             Memory · {ram[0]}–{ram[1]} MB
           </Label>
@@ -272,7 +282,8 @@ export function InstanceEditor({
             {Math.round(totalMemory / 1024)} GB system RAM. Leave room for
             Windows and other apps.
           </p>
-          <Label>Java runtime</Label>
+          </>)}
+          <Label>{engine === "horizon" ? "Preparation Java (25)" : "Java runtime"}</Label>
           <div className="row">
             <Button
               variant={!java ? "secondary" : "outline"}

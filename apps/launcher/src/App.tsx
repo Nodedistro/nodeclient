@@ -111,9 +111,12 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    void refresh()
-      .catch((e) => setError(message(e)))
-      .finally(() => setLoading(false));
+    void (async () => {
+      if (desktop) {
+        await command("initialize_auth").catch((e) => setError(message(e)));
+      }
+      await refresh();
+    })().catch((e) => setError(message(e))).finally(() => setLoading(false));
     void loadVersions();
     if (desktop) {
       void command<UpdateInfo>("check_for_updates")
@@ -205,9 +208,12 @@ export default function App() {
   };
 
   const selectVersion = async (version: string) => {
-    if (selected) {
+    if (selected && selected.engine !== "horizon") {
       await command("save_instance", {
-        instance: { ...selected, minecraftVersion: version },
+        instance: {
+          id: selected.id, name: selected.name, engine: selected.engine, minecraftVersion: version,
+          loader: selected.loader, java: selected.java, memory: selected.memory,
+        },
       });
       await refresh();
       setPage("Home");
@@ -224,7 +230,7 @@ export default function App() {
       return;
     }
     const installOnly = !installed && !opts?.safeMode;
-    if (!installOnly && !account) {
+    if ((!installOnly || selected.engine === "horizon") && !account) {
       setPage("Accounts");
       return;
     }
@@ -312,6 +318,8 @@ export default function App() {
       : data.status.phase
     : !selected
       ? "CREATE"
+      : selected.engine === "horizon" && !account
+        ? "SIGN IN"
       : !installed
         ? "INSTALL"
         : !account

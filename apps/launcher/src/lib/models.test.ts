@@ -11,6 +11,13 @@ describe("instance configuration", () => {
   };
   it("validates real configurations", () =>
     expect(instanceSchema.safeParse(sample).success).toBe(true));
+  it("keeps old instances on Java and validates the Horizon pin", () => {
+    expect(instanceSchema.parse(sample).engine).toBe("java");
+    const native = { ...sample, engine: "horizon", minecraftVersion: "26.3" };
+    expect(instanceSchema.safeParse(native).success).toBe(true);
+    expect(instanceSchema.safeParse({ ...native, minecraftVersion: "1.21" }).success).toBe(false);
+    expect(instanceSchema.safeParse({ ...native, loader: { type: "fabric", version: "0.16" } }).success).toBe(false);
+  });
   it("defaults legacy instances to Java and rejects other editions", () => {
     expect(instanceSchema.parse(sample).edition).toBe("java");
     expect(instanceSchema.safeParse({ ...sample, edition: "bedrock" }).success).toBe(false);

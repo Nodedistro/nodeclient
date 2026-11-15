@@ -8,3 +8,6 @@ serde.workspace = true
 tokio.workspace = true
 nodeclient-types.workspace = true
 serde_json.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

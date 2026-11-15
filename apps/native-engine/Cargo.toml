@@ -1,0 +1,18 @@
+[package]
+name = "nodeengine"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Nodedistro's experimental native voxel engine"
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+macroquad = { version = "0.4", default-features = false }
+glam = "0.27"
+fastnbt = "2"
+flate2 = "1"
+tempfile = "3"
+fs2 = "0.4"
+

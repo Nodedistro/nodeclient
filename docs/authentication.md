@@ -11,7 +11,7 @@ Rust modules under packages/minecraft-auth implement each stage independently:
 7. Real Minecraft profile, including UUID, skins, and capes.
 8. Save only the Microsoft refresh token to OS credentials, keyed by Minecraft UUID; save public profile metadata locally.
 
-Before each Play, rotate the Microsoft refresh token, repeat the entitlement/profile checks, and reject a mismatching account UUID. Authenticated sessions are never returned over IPC. Only the public Profile is serialized to React.
+Once per launcher startup, restore saved accounts, rotate Microsoft refresh tokens, verify entitlements and profiles, and reject mismatching account UUIDs. Play reuses these in-memory Rust sessions without network authentication. New sign-ins also create a verified session. Expired sessions require reopening NodeClient or signing in again; removing an account clears its session. Authenticated sessions are never returned over IPC. Only the public Profile is serialized to React.
 
 Sign-in opens an in-app Microsoft window. When Microsoft redirects to the configured redirect URI, Tauri intercepts that navigation, validates the response in Rust, and closes the window. No system browser and no manual callback paste are used. No password, client secret, implicit flow, or state-verification bypass exists.
 

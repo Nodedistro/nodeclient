@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["apps/launcher/src-tauri", "packages/shared-types", "packages/minecraft-auth", "packages/downloader", "packages/minecraft-core", "packages/profile-manager", "packages/process-manager", "packages/java-manager"]
+members = ["apps/launcher/src-tauri", "apps/native-engine", "packages/horizon-runtime", "packages/shared-types", "packages/minecraft-auth", "packages/downloader", "packages/minecraft-core", "packages/profile-manager", "packages/process-manager", "packages/java-manager"]
 
 [workspace.dependencies]
 anyhow = "1"

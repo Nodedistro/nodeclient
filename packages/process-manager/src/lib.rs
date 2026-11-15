@@ -28,21 +28,39 @@ pub async fn run(
     java: &Path,
     args: &[String],
     game: &Path,
+    info: ProcessInfo,
+    secrets: Vec<String>,
+    started: Arc<dyn Fn(ProcessInfo) + Send + Sync>,
+    logs: LogSink,
+) -> Result<ProcessInfo> {
+    run_with_input(java, args, game, info, secrets, started, logs, None).await
+}
+
+/// Optional input is private session data, never serialized into history or arguments.
+pub async fn run_with_input(
+    executable: &Path,
+    args: &[String],
+    game: &Path,
     mut info: ProcessInfo,
     secrets: Vec<String>,
     started: Arc<dyn Fn(ProcessInfo) + Send + Sync>,
     logs: LogSink,
+    input: Option<Vec<u8>>,
 ) -> Result<ProcessInfo> {
     let history = nodeclient_types::safe_join(game, "logs/last-process.json")?;
     let log_path = nodeclient_types::safe_join(game, "logs/nodeclient-console.log")?;
     let file = Arc::new(tokio::sync::Mutex::new(
         tokio::fs::File::create(log_path).await?,
     ));
-    let mut command = tokio::process::Command::new(java);
+    let mut command = tokio::process::Command::new(executable);
     command
         .args(args)
         .current_dir(game)
-        .stdin(Stdio::null())
+        .stdin(if input.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     command
@@ -52,7 +70,21 @@ pub async fn run(
         .env_remove("CLASSPATH");
     #[cfg(windows)]
     command.creation_flags(0x08000000);
-    let mut child = command.spawn().context("Java could not start Minecraft.")?;
+    let mut child = command
+        .spawn()
+        .context("Game executable could not start.")?;
+    if let Some(payload) = input {
+        let mut stdin = child
+            .stdin
+            .take()
+            .context("Game session pipe unavailable")?;
+        if stdin.write_all(&payload).await.is_err() || stdin.shutdown().await.is_err() {
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+            anyhow::bail!("Could not pass the authenticated session to the game.");
+        }
+        drop(stdin);
+    }
     info.pid = child.id();
     info.start_time = now();
     started(info.clone());

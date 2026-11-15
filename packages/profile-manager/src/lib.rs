@@ -7,7 +7,40 @@ use std::{
 pub struct Store {
     pub root: PathBuf,
 }
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct InstanceInput {
+    pub id: Option<String>,
+    #[serde(default = "default_engine")]
+    pub engine: String,
+    pub name: String,
+    pub minecraft_version: String,
+    pub loader: nodeclient_types::Loader,
+    pub java: nodeclient_types::Java,
+    pub memory: nodeclient_types::Memory,
+}
+fn default_engine() -> String { "java".into() }
 impl Store {
+    pub fn prepare_instance(&self, input: InstanceInput) -> Result<Instance> {
+        let previous = input.id.as_deref().map(|id| self.get(id)).transpose()?;
+        if previous.as_ref().is_some_and(|old| old.engine != input.engine) {
+            bail!("Create a separate instance to use another engine. Existing worlds will not be converted automatically.");
+        }
+        let instance = Instance {
+            id: input.id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+            name: input.name.trim().to_owned(),
+            edition: "java".into(),
+            engine: input.engine,
+            minecraft_version: input.minecraft_version,
+            loader: input.loader,
+            java: input.java,
+            memory: input.memory,
+            last_played: previous.as_ref().and_then(|i| i.last_played),
+            playtime_seconds: previous.as_ref().map_or(0, |i| i.playtime_seconds),
+        };
+        instance.validate()?;
+        Ok(instance)
+    }
     pub fn new(root: PathBuf) -> Result<Self> {
         fs::create_dir_all(&root)?;
         for d in [
@@ -172,6 +205,42 @@ mod tests {
 #[cfg(test)]
 mod persistence_tests {
     use super::*;
+    #[test]
+    fn existing_engines_are_preserved_and_cannot_be_switched() {
+        let root=tempfile::tempdir().unwrap();let store=Store::new(root.path().to_owned()).unwrap();
+        let mut value=serde_json::json!({"name":"Native","engine":"horizon","minecraftVersion":"26.3","loader":{"type":"vanilla"},"java":{"mode":"automatic","path":null},"memory":{"minimumMb":1024,"maximumMb":2048}});
+        let instance=store.prepare_instance(serde_json::from_value(value.clone()).unwrap()).unwrap();
+        store.save(&instance).unwrap();assert_eq!(store.get(&instance.id).unwrap().engine,"horizon");
+        value["id"]=instance.id.clone().into();value["engine"]="java".into();
+        assert!(store.prepare_instance(serde_json::from_value(value.clone()).unwrap()).is_err());
+        value["id"]=serde_json::Value::Null;value["engine"]="horizon".into();value["minecraftVersion"]="1.21".into();
+        assert!(store.prepare_instance(serde_json::from_value(value).unwrap()).is_err());
+    }
+    #[test]
+    fn rust_creates_ids_and_preserves_history_when_editing() {
+        let root = tempfile::tempdir().unwrap();
+        let store = Store::new(root.path().to_owned()).unwrap();
+        let input = serde_json::json!({"name":"  Adventure  ","minecraftVersion":"1.21","loader":{"type":"vanilla"},"java":{"mode":"automatic","path":null},"memory":{"minimumMb":1024,"maximumMb":2048}});
+        let mut instance = store.prepare_instance(serde_json::from_value(input.clone()).unwrap()).unwrap();
+        assert!(uuid::Uuid::parse_str(&instance.id).is_ok());
+        assert_eq!(instance.name, "Adventure");
+        assert_eq!(instance.edition, "java");
+        instance.last_played = Some(123);
+        instance.playtime_seconds = 456;
+        store.save(&instance).unwrap();
+        let mut edit = input.clone();
+        edit["id"] = instance.id.clone().into();
+        edit["name"] = "Renamed".into();
+        let updated = store.prepare_instance(serde_json::from_value(edit.clone()).unwrap()).unwrap();
+        assert_eq!(updated.id, instance.id);
+        assert_eq!(updated.last_played, Some(123));
+        assert_eq!(updated.playtime_seconds, 456);
+        edit["id"] = "missing".into();
+        assert!(store.prepare_instance(serde_json::from_value(edit).unwrap()).is_err());
+        let mut forged = input;
+        forged["playtimeSeconds"] = 999.into();
+        assert!(serde_json::from_value::<InstanceInput>(forged).is_err());
+    }
     #[test]
     fn unsupported_instances_are_preserved_but_not_listed() {
         let root = tempfile::tempdir().unwrap();

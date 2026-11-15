@@ -7,6 +7,7 @@ export const instanceSchema = z
     id: z.string().regex(/^[a-zA-Z0-9_-][a-zA-Z0-9._-]*$/),
     name: z.string().trim().min(1).max(100),
     edition: z.literal("java").default("java"),
+    engine: z.enum(["java", "horizon"]).default("java"),
     minecraftVersion: z.string().min(1),
     loader: z.object({
       type: z.enum(loaderTypes),
@@ -29,6 +30,9 @@ export const instanceSchema = z
     playtimeSeconds: z.number().default(0),
   })
   .superRefine((data, ctx) => {
+    if (data.engine === "horizon" && (data.minecraftVersion !== "26.3" || data.loader.type !== "vanilla" || data.loader.version != null)) {
+      ctx.addIssue({ code: "custom", message: "Horizon requires Minecraft 26.3 without a Java mod loader.", path: ["engine"] });
+    }
     if (
       data.loader.type !== "vanilla" &&
       !data.loader.version?.trim()
@@ -125,8 +129,10 @@ const LOADER_NAMES: Record<string, string> = {
 };
 
 export function loaderLabel(instance: {
+  engine?: string;
   loader: { type: string; version?: string | null };
 }): string {
+  if (instance.engine === "horizon") return "Horizon · Native Rust";
   const name = LOADER_NAMES[instance.loader.type] ?? instance.loader.type;
   if (instance.loader.type === "vanilla") return name;
   return instance.loader.version ? `${name} ${instance.loader.version}` : name;

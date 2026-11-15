@@ -21,6 +21,7 @@ nodeclient-core.workspace = true
 nodeclient-java.workspace = true
 nodeclient-process.workspace = true
 nodeclient-downloader.workspace = true
+nodeclient-horizon = { path = "../../../packages/horizon-runtime" }
 dotenvy = "0.15"
 open = "5"
 rfd = "0.15"

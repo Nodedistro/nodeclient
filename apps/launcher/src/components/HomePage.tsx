@@ -159,7 +159,7 @@ export function HomePage({
             </Button>
             {selected && (
               <>
-                {installed && (
+                {installed && selected.engine !== "horizon" && (
                   <Button
                     variant="outline"
                     disabled={active || !accountReady}

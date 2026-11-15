@@ -4,6 +4,9 @@
   "private": true,
   "packageManager": "pnpm@11.19.0",
   "scripts": {
+    "engine": "cargo run -p nodeengine --release --",
+    "engine:build": "cargo build -p nodeengine --release",
+    "engine:test": "cargo test -p nodeengine",
     "dev": "pnpm --dir apps/launcher dev",
     "build": "pnpm --dir apps/launcher build",
     "lint": "pnpm --dir apps/launcher lint",
